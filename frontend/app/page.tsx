@@ -194,7 +194,7 @@ export default function Home() {
               <button className="btn btn-ghost btn-sm" type="button" onClick={() => fileRef.current?.click()} disabled={uploading}>
                 <Icon name="plus" size={14} /> {uploading ? 'Uploading…' : 'Add photos / video'}
               </button>
-              <span className="form-hint">JPG, PNG, WebP, GIF or MP4 · up to 25 MB — or paste a URL below</span>
+              <span className="form-hint">JPG, PNG, WebP, GIF or MP4 · up to 100 MB — or paste a URL below</span>
             </div>
             {uploadError && <div className="form-error" role="alert">{uploadError}</div>}
             {mediaList.length > 0 && (

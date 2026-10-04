@@ -198,7 +198,7 @@ export default function Preflight() {
                   </div>)}
                 </div> : <button className="pf-drop" type="button" onClick={() => fileRefs.current[i]?.click()} disabled={uploading !== null}>
                   <Icon name="plus" size={16} /> {uploading === i ? 'Uploading…' : 'Upload a reel, image or carousel'}
-                  <small>MP4, MOV, JPG, PNG, WebP or GIF · up to 25 MB</small>
+                  <small>MP4, MOV, JPG, PNG, WebP or GIF · up to 100 MB</small>
                 </button>}
                 {draft.mediaUrls.length > 0 && !video && draft.mediaUrls.length < 10 && <button className="btn btn-ghost btn-sm" type="button" onClick={() => fileRefs.current[i]?.click()} disabled={uploading !== null}><Icon name="plus" size={13} /> Add slide</button>}
                 <label className="field-label" htmlFor={`pf-text-${i}`}>{draft.mediaUrls.length ? (video ? 'Voiceover or on-screen text (optional)' : 'Text on the image (optional)') : 'Or paste a text post'}</label>

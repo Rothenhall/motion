@@ -98,6 +98,7 @@ When an audience simulation is provided, it is a model's estimate of how an aver
 - Give every attention dip and every text-overload moment its own insight with its startSec and endSec, unless two overlap. Use the strongest moment of attention for the "keep this" insight when the frames back it up.
 - Compare the muted attention with the full attention: where they split, the point depends on sound; suggest on-screen text or captions for exactly those seconds.
 - baseline "library" means scores compare this video with a library of similar reels; you may say "lower than most similar reels". baseline "clip" means the scores only compare parts of this video with each other: say "weaker than the rest of your video", never compare with other creators.
+- Unless the baseline is "library" or the creator's history is given, never claim a comparison with other posts ("most similar reels", "most reels", "average reel") anywhere in the report, including the hook reason.
 - sound_off_resilience estimates how well the video works muted (how most feeds autoplay). A low value means the point is lost without sound.
 - Do not quote raw scores. Do not invent numbers.
 - Mark insights driven mainly by it as AUDIENCE_SIMULATION, by the frames as VISUAL_REVIEW, by the caption or script as COPY_REVIEW, by the creator's past performance as YOUR_HISTORY.
@@ -173,20 +174,26 @@ export class AiService {
   private async parse<T>(prompt: string | ContentPart[], schema: z.ZodType<T>, name: string, system = SYSTEM): Promise<T> {
     if (!this.configured) throw new ServiceUnavailableException('AI features need OPENROUTER_API_KEY in backend/.env.');
     const { $schema: _, ...jsonSchema } = z.toJSONSchema(schema) as Record<string, unknown>;
-    const body = {
-      model: this.model,
-      max_tokens: 16000,
-      messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }],
-      response_format: { type: 'json_schema', json_schema: { name, strict: true, schema: jsonSchema } },
-      // Only route to providers that honour the JSON schema.
-      provider: { require_parameters: true },
-    };
+    // Some models drop response_format when images are attached, so the schema is also spelled out in the prompt.
+    const format = `Reply with only a JSON object, no markdown or commentary, that matches this JSON Schema:\n${JSON.stringify(jsonSchema)}`;
+    const messages: Record<string, unknown>[] = [{ role: 'system', content: `${system}\n\n${format}` }, { role: 'user', content: prompt }];
     for (let attempt = 1; ; attempt++) {
-      const text = await this.complete(body);
-      const parsed = schema.safeParse(parseJson(text));
+      const text = await this.complete({
+        model: this.model,
+        max_tokens: 16000,
+        messages,
+        response_format: { type: 'json_schema', json_schema: { name, strict: true, schema: jsonSchema } },
+        // Only route to providers that honour the JSON schema.
+        provider: { require_parameters: true },
+      });
+      const json = parseJson(text);
+      const parsed = schema.safeParse(json);
       if (parsed.success) return parsed.data;
-      this.log.warn(`AI returned JSON that does not match ${name} (attempt ${attempt}): ${parsed.error.message.slice(0, 300)}`);
+      const why = json === undefined ? `not JSON, starts: ${JSON.stringify(text.slice(0, 200))}` : parsed.error.message.slice(0, 300);
+      this.log.warn(`AI reply does not match ${name} (attempt ${attempt}): ${why}`);
       if (attempt >= 2) throw new BadGatewayException('The AI returned an unexpected response. Try again.');
+      // Keep the work from the first reply and ask only for the conversion.
+      messages.push({ role: 'assistant', content: text }, { role: 'user', content: `That reply was not valid JSON for the schema. Rewrite the same content as only the JSON object. ${format}` });
     }
   }
 
@@ -208,7 +215,8 @@ export class AiService {
     if (res.status === 402) throw new ServiceUnavailableException('The OpenRouter account is out of credits.');
     if (res.status === 429) throw new ServiceUnavailableException('The AI is busy right now. Try again in a minute.');
     if (!res.ok || data?.error) {
-      this.log.error(`OpenRouter error ${res.status}: ${data?.error?.message ?? 'no details'}`);
+      const meta = data?.error?.metadata;
+      this.log.error(`OpenRouter error ${res.status}: ${data?.error?.message ?? 'no details'}${meta ? ` (${meta.provider_name ?? 'provider'}: ${String(meta.raw ?? '').slice(0, 300)})` : ''}`);
       throw new BadGatewayException('The AI request failed. Try again.');
     }
     const choice = data?.choices?.[0];
@@ -220,10 +228,14 @@ export class AiService {
   }
 }
 
-/** JSON from a model reply, tolerating a ```json fence around it. */
-function parseJson(text: string): unknown {
+/** JSON from a model reply, tolerating a ```json fence or stray text around the object. */
+export function parseJson(text: string): unknown {
   const unfenced = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
-  try { return JSON.parse(unfenced); } catch { return undefined; }
+  try { return JSON.parse(unfenced); } catch { /* fall through */ }
+  const start = unfenced.indexOf('{');
+  const end = unfenced.lastIndexOf('}');
+  if (start < 0 || end <= start) return undefined;
+  try { return JSON.parse(unfenced.slice(start, end + 1)); } catch { return undefined; }
 }
 
 function brandBlock(brand: BrandContext) {
