@@ -65,7 +65,7 @@ export class MetaService {
     return { name: account.name || 'Instagram', imported };
   }
 
-  private async importInstagramMedia(accountId: string, token: string): Promise<number> {
+  async importInstagramMedia(accountId: string, token: string): Promise<number> {
     const res = await axios.get('https://graph.instagram.com/me/media', {
       params: { fields: 'id,caption,media_type,timestamp,permalink', limit: 25, access_token: token },
     });
@@ -90,6 +90,7 @@ export class MetaService {
           scheduledAt: m.timestamp ? new Date(m.timestamp) : new Date(),
           status: 'PUBLISHED',
           externalId: m.id,
+          permalink: m.permalink ?? null,
         },
       });
       n++;
@@ -116,6 +117,38 @@ export class MetaService {
     return { name: list[0].name, count: list.length };
   }
 
+  async importFacebookPosts(accountId: string, pageId: string, token: string): Promise<number> {
+    const res = await axios.get(`https://graph.facebook.com/${this.v()}/${pageId}/published_posts`, {
+      params: { fields: 'id,message,created_time,permalink_url', limit: 25, access_token: token },
+    });
+    const items: any[] = res.data?.data ?? [];
+    if (!items.length) return 0;
+    const existing = await this.prisma.scheduledPost.findMany({
+      where: { accountId, externalId: { not: null } },
+      select: { externalId: true },
+    });
+    const seen = new Set(existing.map((p) => p.externalId));
+    let n = 0;
+    for (const p of items) {
+      if (!p?.id || seen.has(p.id)) continue;
+      await this.prisma.scheduledPost.create({
+        data: {
+          accountId,
+          platform: 'facebook',
+          mediaType: 'TEXT',
+          caption: p.message ?? null,
+          mediaUrls: '[]',
+          scheduledAt: p.created_time ? new Date(p.created_time) : new Date(),
+          status: 'PUBLISHED',
+          externalId: p.id,
+          permalink: p.permalink_url ?? null,
+        },
+      });
+      n++;
+    }
+    return n;
+  }
+
   // ---------- Threads ----------
 
   async connectThreads(code: string): Promise<{ name: string; imported: number }> {
@@ -139,7 +172,7 @@ export class MetaService {
     return { name: account.name || 'Threads', imported };
   }
 
-  private async importThreads(accountId: string, token: string): Promise<number> {
+  async importThreads(accountId: string, token: string): Promise<number> {
     const res = await axios.get('https://graph.threads.net/v1.0/me/threads', {
       params: { fields: 'id,text,timestamp,permalink', limit: 25, access_token: token },
     });
@@ -163,6 +196,7 @@ export class MetaService {
           scheduledAt: t.timestamp ? new Date(t.timestamp) : new Date(),
           status: 'PUBLISHED',
           externalId: t.id,
+          permalink: t.permalink ?? null,
         },
       });
       n++;

@@ -65,7 +65,8 @@ export class PublishersService {
       return r.data.id;
     }
     const r = await axios.post(`https://graph.facebook.com/${v}/${acc.externalId}/photos`, { url: first, caption, access_token: acc.accessToken });
-    return r.data.id || r.data.post_id;
+    // post_id is the feed post (what insights and imports key on); id is the photo.
+    return r.data.post_id || r.data.id;
   }
 
   // Threads: POST /{user-id}/threads then /threads_publish (wait ~30s)
