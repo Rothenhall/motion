@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Icon } from './Icons';
 
-type Action = { id: string; label: string; hint: string; group: string; href?: string; run?: () => void; icon: 'grid' | 'bulb' | 'sparkles' | 'calendar' | 'zap' | 'inbox' | 'link' | 'chart' | 'plus' | 'search' | 'sun' | 'moon' };
+type Action = { id: string; label: string; hint: string; group: string; href?: string; run?: () => void; icon: 'grid' | 'bulb' | 'sparkles' | 'gauge' | 'calendar' | 'zap' | 'inbox' | 'link' | 'chart' | 'plus' | 'search' | 'sun' | 'moon' };
 
 export default function CommandPalette({ open, onClose, onToggleTheme, dark }: { open: boolean; onClose: () => void; onToggleTheme: () => void; dark: boolean }) {
   const router = useRouter();
@@ -18,6 +18,7 @@ export default function CommandPalette({ open, onClose, onToggleTheme, dark }: {
     { id: 'pl', label: 'Go to Planner', hint: 'Calendar', group: 'Navigate', href: '/planner', icon: 'calendar' },
     { id: 'id', label: 'Go to Ideas', hint: 'AI content ideas', group: 'Navigate', href: '/ideas', icon: 'bulb' },
     { id: 'hk', label: 'Go to Hook library', hint: 'Opening lines', group: 'Navigate', href: '/hooks', icon: 'sparkles' },
+    { id: 'pf', label: 'Go to Pre-flight check', hint: 'Predict reactions before posting', group: 'Navigate', href: '/preflight', icon: 'gauge' },
     { id: 'au', label: 'Go to Automations', hint: 'Engagement', group: 'Navigate', href: '/automations', icon: 'zap' },
     { id: 'in', label: 'Go to Inbox', hint: '12 unread', group: 'Navigate', href: '/comments', icon: 'inbox' },
     { id: 'co', label: 'Go to Connections', hint: 'Channels', group: 'Navigate', href: '/connect', icon: 'link' },

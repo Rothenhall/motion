@@ -49,6 +49,24 @@ hook library: 32 starter hooks, AI-written hooks for a topic, your own, and favo
 the Anthropic SDK (`backend/src/ai/`). Set `ANTHROPIC_API_KEY` in `backend/.env`; `ANTHROPIC_MODEL` overrides
 the default `claude-opus-5-5`. Turning on autopilot in the brand profile adds fresh ideas every day at 7am.
 
+## Pre-flight check
+
+`/preflight` predicts how people will react to a post before it goes out. Upload a reel, image, carousel or
+text post (or click "Check before posting" in the composer) and Motion returns a one-line verdict, Weak / OK /
+Strong ratings (hook, clarity, visuals, pacing, emotional pull, works muted, call to action), timestamped fixes,
+and three stronger openings you can save to the hook library. "Compare versions" ranks 2 or 3 versions by how
+well they open.
+
+- Every check runs as a background job (`backend/src/preflight/`). Videos are sampled with ffmpeg (every second
+  of the first 3, then spread to the end) plus scene cuts; Claude reviews the frames, caption, script, your brand
+  profile and your own past post performance.
+- Reels can also go through the optional **audience simulation**: Meta's TRIBE v2 running on a GPU
+  (`tribe-service/`). It adds a predicted attention curve with and without sound, likely drop-off moments and
+  a muted-autoplay check, which Claude turns into plain advice. Set `TRIBE_SERVICE_URL` and
+  `TRIBE_SERVICE_TOKEN` in `backend/.env`; without them the check uses Claude alone.
+- All results are estimates and the UI says so. The TRIBE scores are not yet calibrated against real results.
+  TRIBE v2 is CC BY-NC 4.0: internal R&D only, not for paying users without a license from Meta.
+
 ## Security
 
 - Every API route needs a signed-in Motion user (`Authorization: Bearer <token>` from `POST /auth/register` or `POST /auth/login`). Only sign-up/sign-in, the Meta OAuth callbacks, the webhook endpoint and `/media/*` files are public.

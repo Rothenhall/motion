@@ -29,12 +29,73 @@ const HookSchema = z.object({
   })),
 });
 
+export const RATINGS = ['WEAK', 'OK', 'STRONG'] as const;
+export const DIMENSIONS = ['HOOK', 'CLARITY', 'VISUALS', 'PACING', 'EMOTION', 'SOUND_OFF', 'CTA'] as const;
+export const INSIGHT_BASES = ['AUDIENCE_SIMULATION', 'VISUAL_REVIEW', 'COPY_REVIEW', 'YOUR_HISTORY'] as const;
+
+const PreflightSchema = z.object({
+  verdict: z.string().describe('One plain sentence for the creator: the most important thing about how people will likely react'),
+  hook: z.object({
+    rating: z.enum(RATINGS),
+    score: z.number().describe('0 to 100: how likely the opening (first 3 seconds, or first line) is to stop the scroll'),
+    reason: z.string().describe('One sentence on why'),
+  }),
+  dimensions: z.array(z.object({
+    key: z.enum(DIMENSIONS),
+    rating: z.enum(RATINGS),
+    note: z.string().describe('A few words on why'),
+  })),
+  insights: z.array(z.object({
+    title: z.string().describe('Short headline in plain words, e.g. "Slow opening"'),
+    detail: z.string().describe('What viewers will likely do and why, one or two sentences, hedged ("may", "likely")'),
+    fix: z.string().describe('A concrete edit the creator can make before posting'),
+    severity: z.enum(['HIGH', 'MEDIUM', 'LOW']),
+    startSec: z.number().nullable().describe('Seconds from the start of the video, or null'),
+    endSec: z.number().nullable(),
+    basis: z.enum(INSIGHT_BASES),
+  })),
+  alternativeHooks: z.array(z.string()).describe('Three stronger openings written for this exact post'),
+});
+
+export type PreflightReport = z.infer<typeof PreflightSchema>;
+export type ReviewImage = { label: string; mediaType: string; data: string };
+export type PreflightInput = {
+  kind: 'VIDEO' | 'IMAGE' | 'CAROUSEL' | 'TEXT';
+  platform: string;
+  caption?: string | null;
+  text?: string | null;
+  brand?: BrandContext | null;
+  facts: Record<string, unknown>;
+  simulation?: Record<string, unknown> | null;
+  history?: string | null;
+  images: ReviewImage[];
+};
+
 export type GeneratedIdea = z.infer<typeof IdeaSchema>['ideas'][number];
 export type GeneratedHook = z.infer<typeof HookSchema>['hooks'][number];
 
 const SYSTEM = `You are the content strategist inside Motion, a social media marketing tool for creators and small brands on Instagram, Facebook and Threads.
 Write in the brand's own voice. Be specific to the niche: concrete examples, numbers, named situations the audience recognises. Avoid generic advice, clichés like "game-changer" or "unlock", and emoji spam.
 Match each idea to how the platform actually works: Reels and Stories are visual and fast, carousels teach step by step, Threads rewards conversational text, Facebook favours community and longer captions.`;
+
+const PREFLIGHT_SYSTEM = `You are Motion's pre-flight reviewer. A creator is about to post something on social media. Predict how people scrolling their feed will likely react, and tell the creator exactly what to change before posting.
+
+Rules:
+- Talk to the creator as "you", in plain words. Be specific to this post: point at a timestamp, a frame, or a line of the caption.
+- Never mention brains, neurons, fMRI, cortex, brain regions, "neuro" or the simulation's internals. Say "viewers" and "attention".
+- These are estimates. Use "may", "likely", "compared with similar posts". Never promise results.
+- Every insight needs a concrete fix the creator can make in their editor or caption.
+- Give 3 to 6 insights, most important first. Include one thing that already works (severity LOW, framed as "keep this").
+- Timestamps are seconds from the start of the video; use null for images, text, or whole-post points.
+
+When an audience simulation is provided, it is a model's estimate of how an average viewer's attention moves second by second (0-100, 50 = typical).
+- Use it to find where attention may rise or dip, then use the frames at those times to explain why. If the frames don't back it up, say less.
+- baseline "library" means scores compare this video with a library of similar reels; you may say "lower than most similar reels". baseline "clip" means the scores only compare parts of this video with each other: say "weaker than the rest of your video", never compare with other creators.
+- sound_off_resilience estimates how well the video works muted (how most feeds autoplay). A low value means the point is lost without sound.
+- Do not quote raw scores. Do not invent numbers.
+- Mark insights driven mainly by it as AUDIENCE_SIMULATION, by the frames as VISUAL_REVIEW, by the caption or script as COPY_REVIEW, by the creator's past performance as YOUR_HISTORY.
+
+Alternative hooks: three openings for this exact post in the brand's voice. For video, the first spoken line or on-screen text; for images and text, the first line of the caption or post.`;
 
 /** Thin wrapper around the Anthropic SDK that returns schema-validated JSON for the AI features. */
 @Injectable()
@@ -78,7 +139,37 @@ export class ClaudeService {
     return out.hooks.slice(0, input.count);
   }
 
-  private async parse<T>(prompt: string, format: ReturnType<typeof betaZodOutputFormat<z.ZodType<T>>>): Promise<T> {
+  /** Pre-flight check: frames / images + measured facts + optional audience simulation -> plain-language insights. */
+  async reviewContent(input: PreflightInput): Promise<PreflightReport> {
+    const dimensions = input.kind === 'VIDEO' ? DIMENSIONS : input.kind === 'TEXT' ? ['HOOK', 'CLARITY', 'EMOTION', 'CTA'] : ['HOOK', 'VISUALS', 'CLARITY', 'EMOTION', 'CTA'];
+    const kindLabel = { VIDEO: 'a reel / short video', IMAGE: 'a single image post', CAROUSEL: 'a carousel', TEXT: 'a text post' }[input.kind];
+    const lines = [
+      `The creator is about to post ${kindLabel} on ${input.platform}.`,
+      input.brand ? brandBlock(input.brand) : '',
+      input.caption ? `Caption:\n"""${input.caption}"""` : 'No caption yet.',
+      input.text ? (input.kind === 'TEXT' ? `Post text:\n"""${input.text}"""` : `Script / voiceover / on-screen text the creator provided:\n"""${input.text}"""`) : '',
+      `Measured facts: ${JSON.stringify(input.facts)}`,
+      input.simulation ? `Audience simulation: ${JSON.stringify(input.simulation)}` : input.kind === 'VIDEO' ? 'No audience simulation is available for this video: base the review on the frames, facts and copy.' : '',
+      input.history ? `How this creator's recent posts performed:\n${input.history}` : '',
+      `Rate exactly these dimensions: ${dimensions.join(', ')}.`,
+      input.images.length ? (input.kind === 'VIDEO' ? 'Frames from the video follow, each labelled with its timestamp.' : 'The images follow, in posting order.') : '',
+    ];
+    const content: Anthropic.Beta.BetaContentBlockParam[] = [{ type: 'text', text: lines.filter(Boolean).join('\n\n') }];
+    for (const image of input.images) {
+      content.push({ type: 'text', text: image.label });
+      content.push({ type: 'image', source: { type: 'base64', media_type: image.mediaType as 'image/jpeg', data: image.data } });
+    }
+    const report = await this.parse(content, betaZodOutputFormat(PreflightSchema), PREFLIGHT_SYSTEM);
+    return {
+      ...report,
+      hook: { ...report.hook, score: Math.max(0, Math.min(100, Math.round(report.hook.score))) },
+      dimensions: report.dimensions.filter((d) => (dimensions as readonly string[]).includes(d.key)),
+      insights: report.insights.slice(0, 6),
+      alternativeHooks: report.alternativeHooks.slice(0, 3),
+    };
+  }
+
+  private async parse<T>(prompt: string | Anthropic.Beta.BetaContentBlockParam[], format: ReturnType<typeof betaZodOutputFormat<z.ZodType<T>>>, system = SYSTEM): Promise<T> {
     try {
       const response = await this.sdk().beta.messages.parse({
         model: this.model,
@@ -88,7 +179,7 @@ export class ClaudeService {
         // On a safety decline, let the API retry on a suitable fallback model in the same call.
         betas: ['server-side-fallback-2026-07-01'],
         fallbacks: 'default',
-        system: SYSTEM,
+        system,
         messages: [{ role: 'user', content: prompt }],
       });
       if (response.stop_reason === 'refusal') throw new BadGatewayException('The AI declined this request. Try rephrasing the topic.');
