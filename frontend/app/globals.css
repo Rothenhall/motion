@@ -737,3 +737,10 @@ input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--da
 [data-theme="dark"] ::-webkit-scrollbar-thumb { background: #2e4062; border-color: var(--bg); }
 [data-theme="dark"] .cmdk-foot { background: rgba(255,255,255,.02); }
 [data-theme="dark"] .cmdk-item.selected, [data-theme="dark"] .cmdk-item:hover { background: rgba(99,102,241,.16); }
+
+/* Sign in */
+.auth-page { min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; }
+.auth-card { width: 100%; max-width: 380px; padding: 28px; display: grid; gap: 14px; }
+.auth-card h1 { margin: 4px 0 0; font-size: 20px; color: var(--text-1); }
+.auth-card .brand-name { color: var(--text-1); }
+.auth-card input { width: 100%; }
