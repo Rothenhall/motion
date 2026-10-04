@@ -22,7 +22,22 @@ These are **uncalibrated estimates**: public attempts (see the research report) 
 significant link yet between TRIBE scores and real engagement. Treat them as directional until
 they are calibrated against Motion's own post performance.
 
-## Run it
+## Run it on Modal (serverless GPU, recommended)
+
+```bash
+cd tribe-service
+pip install modal && modal setup                     # opens a browser login
+modal secret create motion-tribe HF_TOKEN=hf_xxx TRIBE_SERVICE_TOKEN=some-long-secret
+modal run modal_app.py::prefetch                     # one-time: weights + atlas into a Modal volume
+modal deploy modal_app.py                            # prints https://<workspace>--motion-tribe-web.modal.run
+```
+
+Set `TRIBE_SERVICE_URL` to that URL and `TRIBE_SERVICE_TOKEN` to the same secret in `backend/.env`.
+It runs on an A100 40 GB, scales to zero after 5 idle minutes and to at most 2 GPUs. The first request after
+idling waits for a cold start while the model loads. Long analyses come back through Modal's 303 redirect,
+which the backend follows.
+
+## Run it on your own GPU
 
 Needs an NVIDIA GPU with ~32 GB VRAM and a Hugging Face token approved for
 [Llama 3.2-3B](https://huggingface.co/meta-llama/Llama-3.2-3B) (TRIBE uses it for words).

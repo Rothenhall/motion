@@ -43,6 +43,8 @@ export class TribeClient {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         timeout: TIMEOUT_MS,
         maxBodyLength: Infinity,
+        // Modal web endpoints answer requests longer than 150 s with a 303 to a URL that waits for the result.
+        maxRedirects: 20,
       });
       if (!data || !Array.isArray(data.curves?.attention_index)) throw new Error('unexpected response');
       return data as AudienceSimulation;
