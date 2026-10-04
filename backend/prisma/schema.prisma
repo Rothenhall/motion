@@ -1,0 +1,66 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite" // switch to "postgresql" later, keep models unchanged
+  url      = env("DATABASE_URL")
+}
+
+model SocialAccount {
+  id            String   @id @default(cuid())
+  provider      String   // facebook_page | instagram | threads
+  externalId    String   // Page ID / IG ID / Threads User ID
+  name          String?
+  accessToken   String
+  tokenExpires  DateTime?
+  meta          String?  // JSON: username, followers/media counts, profile pic
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  posts         ScheduledPost[]
+  rules         AutomationRule[]
+
+  @@unique([provider, externalId])
+}
+
+model ScheduledPost {
+  id          String   @id @default(cuid())
+  accountId   String
+  account     SocialAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  platform    String   // instagram | facebook | threads
+  mediaType   String   // TEXT | IMAGE | VIDEO | REELS | STORIES | CAROUSEL
+  caption     String?
+  mediaUrls   String   // JSON array string
+  scheduledAt DateTime
+  status      String   @default("SCHEDULED") // SCHEDULED|PUBLISHING|PUBLISHED|FAILED
+  externalId  String?
+  error       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model AutomationRule {
+  id          String   @id @default(cuid())
+  accountId   String
+  account     SocialAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name        String
+  trigger     String   @default("COMMENT_KEYWORD") // COMMENT_KEYWORD | ALL_COMMENTS
+  keyword     String?
+  replyMode   String   @default("PUBLIC_AND_DM") // PUBLIC | DM | PUBLIC_AND_DM
+  publicReply String?
+  dmText      String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+}
+
+model CommentEvent {
+  id          String   @id @default(cuid())
+  platform    String
+  mediaId     String?
+  commentId   String   @unique
+  senderId    String?
+  text        String?
+  replied     Boolean  @default(false)
+  dmSent      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+}
