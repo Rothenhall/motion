@@ -3,24 +3,37 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite" // switch to "postgresql" later, keep models unchanged
+  provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  accounts     SocialAccount[]
 }
 
 model SocialAccount {
   id            String   @id @default(cuid())
+  userId        String?  // null only for channels connected before user accounts existed
+  user          User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
   provider      String   // facebook_page | instagram | threads
   externalId    String   // Page ID / IG ID / Threads User ID
   name          String?
-  accessToken   String
+  accessToken   String   // AES-256-GCM ciphertext ("enc:v1:..."), see src/auth/crypto.ts
   tokenExpires  DateTime?
   meta          String?  // JSON: username, followers/media counts, profile pic
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   posts         ScheduledPost[]
   rules         AutomationRule[]
+  comments      CommentEvent[]
 
-  @@unique([provider, externalId])
+  @@unique([userId, provider, externalId])
+  @@index([provider, externalId])
 }
 
 model ScheduledPost {
@@ -55,12 +68,16 @@ model AutomationRule {
 
 model CommentEvent {
   id          String   @id @default(cuid())
+  accountId   String?  // the connected channel the comment arrived on; null for events from before scoping
+  account     SocialAccount? @relation(fields: [accountId], references: [id], onDelete: Cascade)
   platform    String
   mediaId     String?
-  commentId   String   @unique
+  commentId   String
   senderId    String?
   text        String?
   replied     Boolean  @default(false)
   dmSent      Boolean  @default(false)
   createdAt   DateTime @default(now())
+
+  @@unique([accountId, commentId])
 }

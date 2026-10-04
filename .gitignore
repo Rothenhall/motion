@@ -6,3 +6,5 @@ dist/
 .env.local
 *.db
 *.db-journal
+*.tsbuildinfo
+backend/uploads/

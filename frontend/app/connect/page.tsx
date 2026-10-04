@@ -1,15 +1,15 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { API, api } from '../../lib/api';
+import { api } from '../../lib/api';
 import { Icon } from '../../components/Icons';
 
 type Account = { id: string; provider: string; externalId: string; name?: string | null; createdAt: string };
 
 const providers = [
-  { id: 'instagram', title: 'Instagram', desc: 'Posts, Reels, comments and DMs — synced automatically.', icon: 'instagram' as const, tone: 'instagram', href: `${API}/auth/instagram`, match: 'instagram' },
-  { id: 'facebook', title: 'Facebook', desc: 'Pages, publishing and community inbox — synced automatically.', icon: 'facebook' as const, tone: 'facebook', href: `${API}/auth/facebook`, match: 'facebook_page' },
-  { id: 'threads', title: 'Threads', desc: 'Text-first publishing — synced automatically.', icon: 'threads' as const, tone: 'threads', href: `${API}/auth/threads`, match: 'threads' },
+  { id: 'instagram', title: 'Instagram', desc: 'Posts, Reels, comments and DMs — synced automatically.', icon: 'instagram' as const, tone: 'instagram', match: 'instagram' },
+  { id: 'facebook', title: 'Facebook', desc: 'Pages, publishing and community inbox — synced automatically.', icon: 'facebook' as const, tone: 'facebook', match: 'facebook_page' },
+  { id: 'threads', title: 'Threads', desc: 'Text-first publishing — synced automatically.', icon: 'threads' as const, tone: 'threads', match: 'threads' },
 ];
 
 function label(provider: string) { return provider === 'facebook_page' ? 'Facebook' : provider === 'threads' ? 'Threads' : 'Instagram'; }
@@ -60,6 +60,12 @@ export default function Connect() {
     setIsError(false);
   };
 
+  // The backend signs an OAuth `state` for this user, so the Meta callback lands in the right workspace.
+  const connect = async (provider: string) => {
+    try { window.location.assign((await api<{ url: string }>(`/auth/${provider}/start`)).url); }
+    catch (error) { setNotice(error instanceof Error ? error.message : 'Could not start connecting.'); setIsError(true); }
+  };
+
   const accountFor = (match: string) => accounts.find((a) => a.provider === match);
 
   return <div>
@@ -90,7 +96,7 @@ export default function Connect() {
               <strong>{provider.title}</strong><p>{provider.desc}</p>
               {existing
                 ? <a className="btn btn-soft btn-sm" href="#connected-accounts">Manage connection</a>
-                : <a className="btn btn-ghost btn-sm" href={provider.href}><Icon name="link" size={13} /> Connect {provider.title}</a>}
+                : <button className="btn btn-ghost btn-sm" type="button" onClick={() => connect(provider.id)}><Icon name="link" size={13} /> Connect {provider.title}</button>}
             </div>
           </div>
         );
