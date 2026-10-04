@@ -17,10 +17,12 @@ import { MetaService } from './meta.service';
 import { DashboardController } from './dashboard.controller';
 import { UsersController } from './auth/users.controller';
 import { AuthGuard } from './auth/auth.guard';
+import { InsightsService } from './insights.service';
+import { AnalyticsController } from './analytics.controller';
 
 @Module({
   imports: [ConfigModule.forRoot({ isGlobal: true }), ScheduleModule.forRoot()],
-  controllers: [UsersController, AuthController, PostsController, AccountsController, AutomationsController, CommentsController, WebhooksController, DashboardController, MediaController],
-  providers: [{ provide: APP_GUARD, useClass: AuthGuard }, PrismaService, SchedulerService, PublishersService, AutomationsService, MetaService],
+  controllers: [UsersController, AuthController, PostsController, AccountsController, AutomationsController, CommentsController, WebhooksController, DashboardController, MediaController, AnalyticsController],
+  providers: [{ provide: APP_GUARD, useClass: AuthGuard }, PrismaService, SchedulerService, PublishersService, AutomationsService, MetaService, InsightsService],
 })
 export class AppModule {}

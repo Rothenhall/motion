@@ -45,6 +45,7 @@ describe('API security', () => {
       ['get', '/automations'], ['post', '/automations'], ['patch', '/automations/x/toggle'], ['delete', '/automations/x'],
       ['get', '/comments/events'], ['post', '/comments/reply'],
       ['get', '/dashboard'], ['post', '/media/upload'],
+      ['get', '/analytics'], ['post', '/analytics/sync'],
       ['get', '/auth/me'], ['get', '/auth/instagram/start'], ['post', '/auth/exchange'],
     ];
 
@@ -122,6 +123,24 @@ describe('API security', () => {
       expect(dash.body.stats.scheduled).toBe(0);
       expect(dash.body.automationCount).toBe(0);
       expect((await http().get('/dashboard').set('Authorization', `Bearer ${bob}`).expect(200)).body.stats.scheduled).toBe(1);
+    });
+
+    it('keeps analytics to the owner\'s channels', async () => {
+      const yesterday = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate()) - 86_400_000);
+      await prisma.accountInsight.createMany({ data: [
+        { accountId: bobAccount, date: yesterday, metric: 'views', value: 500 },
+        { accountId: bobAccount, date: yesterday, metric: 'followers', value: 42 },
+      ] });
+
+      const mine = (await http().get('/analytics?days=7').set('Authorization', `Bearer ${bob}`).expect(200)).body;
+      expect(mine.totals.views).toBe(500);
+      expect(mine.totals.followers).toBe(42);
+      expect(mine.channels.map((c: any) => c.accountId)).toEqual([bobAccount]);
+
+      const theirs = (await http().get('/analytics?days=7').set('Authorization', `Bearer ${alice}`).expect(200)).body;
+      expect(theirs.totals.views).toBe(0);
+      expect(theirs.totals.followers).toBeNull();
+      expect(theirs.channels.map((c: any) => c.accountId)).not.toContain(bobAccount);
     });
   });
 

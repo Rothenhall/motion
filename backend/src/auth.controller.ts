@@ -1,6 +1,7 @@
 import { BadRequestException, Body, Controller, Get, Param, Post, Query, Res } from '@nestjs/common';
 import axios from 'axios';
 import { MetaService } from './meta.service';
+import { InsightsService } from './insights.service';
 import { AuthUser, CurrentUser, Public } from './auth/auth.guard';
 import { signToken, verifyToken } from './auth/crypto';
 
@@ -9,7 +10,7 @@ const EXPIRED = 'This connection link expired or was not started from Motion. Pl
 
 const FB_SCOPES = [
   'pages_show_list','pages_read_engagement','pages_manage_posts',
-  'pages_messaging','pages_read_user_content',
+  'pages_messaging','pages_read_user_content','read_insights',
 ].join(',');
 
 // Business Login for Instagram — IG only, no Facebook required for the end user.
@@ -18,13 +19,14 @@ const IG_SCOPES = [
   'instagram_business_content_publish',
   'instagram_business_manage_comments',
   'instagram_business_manage_messages',
+  'instagram_business_manage_insights',
 ].join(',');
 
-const THREADS_SCOPES = ['threads_basic','threads_content_publish'].join(',');
+const THREADS_SCOPES = ['threads_basic','threads_content_publish','threads_manage_insights'].join(',');
 
 @Controller('auth')
 export class AuthController {
-  constructor(private meta: MetaService) {}
+  constructor(private meta: MetaService, private insights: InsightsService) {}
 
   private redirectFor(kind: string) {
     const map: any = {
@@ -78,6 +80,8 @@ export class AuthController {
   // OAuth callbacks auto-connect: exchange -> long-lived token -> profile ->
   // stored account -> recent history import. The user just lands back connected.
   private done(res: any, provider: string, label: string) {
+    // Pull first insights in the background so Analytics has data by the time they look.
+    this.insights.syncAll().catch(() => undefined);
     return res.redirect(`${process.env.FRONTEND_URL}/connect?connected=${provider}&account=${encodeURIComponent(label)}`);
   }
 
