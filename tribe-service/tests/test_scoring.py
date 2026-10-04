@@ -57,6 +57,20 @@ def test_mid_video_dip_is_flagged_with_timestamps():
     assert len(result["curves"]["attention_index"]) == 20
 
 
+def test_moments_name_what_drives_them():
+    dip = np.zeros(20)
+    dip[8:12] = -2.0
+    wander = np.zeros(20)
+    wander[8:12] = 3.0
+    result = scoring.analyze(clip(visual_motion=dip, faces=dip, default_mode=wander))
+    drop = next(m for m in result["moments"] if m["kind"] == "drop_risk")
+    named = {(d["system"], d["direction"]) for d in drop["drivers"]}
+    assert ("default_mode", "high") in named
+    assert named & {("visual_motion", "low"), ("faces", "low")}
+    assert len(drop["drivers"]) <= scoring.MAX_DRIVERS
+    assert all(abs(d["z"]) >= scoring.DRIVER_MIN_Z for m in result["moments"] for d in m["drivers"])
+
+
 def test_mind_wandering_lowers_attention():
     wander = np.zeros(20)
     wander[10:15] = 3.0

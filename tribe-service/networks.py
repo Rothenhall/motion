@@ -65,6 +65,41 @@ def load_roi_map(path: Path) -> dict[str, np.ndarray]:
     return roi_map
 
 
+def encode_brain(preds: np.ndarray) -> dict:
+    """(seconds, 20484) predictions -> compact per-second cortical map for visualisation.
+
+    Values are clipped to the clip's 1st-99th percentile, quantised to uint8, zlib-compressed
+    and base64-encoded (row-major, one row per second, left hemisphere first).
+    """
+    import base64
+    import zlib
+
+    if preds.ndim != 2 or preds.shape[1] != N_VERTICES:
+        raise ValueError(f"expected (n_seconds, {N_VERTICES}) predictions, got {preds.shape}")
+    lo, hi = (float(v) for v in np.percentile(preds, [1, 99]))
+    scaled = np.clip((preds - lo) / max(hi - lo, 1e-9), 0, 1)
+    data = np.round(scaled * 255).astype(np.uint8)
+    return {
+        "mesh": "fsaverage5",
+        "fps": 1,
+        "shape": list(data.shape),
+        "dtype": "uint8",
+        "range": [round(lo, 5), round(hi, 5)],
+        "encoding": "zlib+base64",
+        "data": base64.b64encode(zlib.compress(data.tobytes(), 9)).decode(),
+    }
+
+
+def decode_brain(brain: dict) -> np.ndarray:
+    """Inverse of encode_brain, back to approximate prediction values."""
+    import base64
+    import zlib
+
+    data = np.frombuffer(zlib.decompress(base64.b64decode(brain["data"])), dtype=np.uint8).reshape(brain["shape"])
+    lo, hi = brain["range"]
+    return lo + data.astype(np.float32) / 255 * (hi - lo)
+
+
 def reduce(preds: np.ndarray, roi_map: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
     """(seconds, 20484) predictions -> {system: (seconds,) mean activity}."""
     if preds.ndim != 2 or preds.shape[1] != N_VERTICES:

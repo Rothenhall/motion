@@ -14,7 +14,14 @@ export type AudienceSimulation = {
   sound_off_attention: number[] | null;
   scores: Record<'hook' | 'hold' | 'ending' | 'human_pull_opening' | 'emotional_resonance' | 'text_load_peak' | 'message_clarity' | 'sound_off_resilience', Score>;
   facts: { first_face_second: number | null; short_clip: boolean; speech_seconds: number };
-  moments: { kind: 'drop_risk' | 'text_overload' | 'peak'; start: number; end: number; level: number }[];
+  moments: {
+    kind: 'drop_risk' | 'text_overload' | 'peak';
+    start: number;
+    end: number;
+    level: number;
+    /** What stood out most during the moment (older service versions omit it). */
+    drivers?: { system: string; direction: 'high' | 'low'; z: number }[];
+  }[];
   transcript: { word: string; start: number; duration: number }[];
   has_audio: boolean;
   model: string;

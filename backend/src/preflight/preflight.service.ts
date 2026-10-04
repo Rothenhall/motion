@@ -179,8 +179,6 @@ export class PreflightService {
         const facts = await probeVideo(video.path);
         const cuts = await sceneCuts(video.path).catch(() => []);
         const frames = await extractFrames(video.path, frameTimes(facts.durationSec));
-        frames.forEach((f) => images.push({ label: `Frame at ${f.atSec.toFixed(1)}s`, mediaType: 'image/jpeg', data: f.jpegBase64 }));
-        signals.video = { ...facts, cuts, frameTimes: frames.map((f) => f.atSec) };
         if (this.tribe.configured) {
           if (facts.durationSec > MAX_SIMULATION_SEC) signals.simulationError = 'Audience simulation runs on videos up to 3 minutes.';
           else {
@@ -188,7 +186,15 @@ export class PreflightService {
             catch (error) { signals.simulationError = error instanceof Error ? error.message : 'The audience simulation failed.'; }
           }
         }
-        if (simulation) signals.simulation = simulation;
+        if (simulation) {
+          signals.simulation = simulation;
+          // Show Claude what is on screen where the simulation flags something, so it can explain why.
+          const extra = momentTimes(simulation, facts.durationSec, frames.map((f) => f.atSec));
+          if (extra.length) frames.push(...(await extractFrames(video.path, extra).catch(() => [])));
+          frames.sort((a, b) => a.atSec - b.atSec);
+        }
+        frames.forEach((f) => images.push({ label: `Frame at ${f.atSec.toFixed(1)}s`, mediaType: 'image/jpeg', data: f.jpegBase64 }));
+        signals.video = { ...facts, cuts, frameTimes: frames.map((f) => f.atSec) };
       } else if (check.kind !== 'TEXT') {
         for (const [i, m] of media.entries()) {
           const image = await imageForReview(m.path, m.mime);
@@ -275,7 +281,41 @@ function reviewFacts(kind: Kind, video: (VideoFacts & { cuts: number[] }) | unde
   return facts;
 }
 
-/** The part of the simulation Claude needs: scores, moments, the attention curve and a timed transcript. */
+/** Plain-language names for the simulated viewer responses, so Claude never sees (or repeats) brain jargon. */
+const RESPONSE_NAMES: Record<string, string> = {
+  attention_index: 'overall attention',
+  faces: 'noticing people and faces',
+  language: 'following the spoken or written message',
+  text_reading: 'reading on-screen text',
+  social: 'emotional and story engagement',
+  auditory: 'taking in sound, music and voice',
+  visual_motion: 'tracking motion on screen',
+  scenes: 'taking in the setting or scenery',
+  early_visual: 'visual busyness (contrast, cuts, detail)',
+  attention: 'focused attention on the screen',
+  default_mode: 'mind-wandering',
+};
+
+const MOMENT_NAMES: Record<string, string> = {
+  drop_risk: 'attention dips (viewers may swipe away)',
+  text_overload: 'too much on-screen text to read at once',
+  peak: 'strongest moment of attention',
+};
+
+/** Seconds worth looking at in the frames: where flagged moments start, plus each peak. */
+export function momentTimes(sim: AudienceSimulation, durationSec: number, existing: number[], max = 4): number[] {
+  const end = Math.max(0, durationSec - 0.25);
+  const out: number[] = [];
+  for (const m of sim.moments || []) {
+    const t = Math.min(end, m.kind === 'drop_risk' ? m.start + 0.5 : m.start);
+    if ([...existing, ...out].some((e) => Math.abs(e - t) < 0.75)) continue;
+    out.push(Math.round(t * 10) / 10);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+/** The part of the simulation Claude needs: scores, moments with what drives them, every response curve and a timed transcript. */
 function simulationForReview(sim: AudienceSimulation) {
   const scores = Object.fromEntries(Object.entries(sim.scores).map(([k, v]) => [k, v ? { value: v.value, percentile: v.percentile } : null]));
   const transcript: string[] = [];
@@ -293,10 +333,16 @@ function simulationForReview(sim: AudienceSimulation) {
     seconds: sim.seconds,
     scores,
     facts: sim.facts,
-    moments: sim.moments,
+    moments: (sim.moments || []).map((m) => ({
+      what: MOMENT_NAMES[m.kind] || m.kind,
+      fromSec: m.start,
+      toSec: m.end,
+      level: m.level,
+      becauseViewersAre: (m.drivers || []).map((d) => `${d.direction === 'high' ? 'more' : 'less'} ${RESPONSE_NAMES[d.system] || d.system} than usual`),
+    })),
     attentionBySecond: sim.curves.attention_index,
     attentionMutedBySecond: sim.sound_off_attention,
-    facesBySecond: sim.curves.faces,
+    responsesBySecond: Object.fromEntries(Object.entries(sim.curves).filter(([k]) => k !== 'attention_index').map(([k, v]) => [RESPONSE_NAMES[k] || k, v])),
     transcript: transcript.join('\n') || null,
   };
 }

@@ -1,4 +1,4 @@
-import numpy as np
+﻿import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
@@ -22,7 +22,8 @@ class FakeRunner:
         nets = {k: rng.normal(0, 1, 12) for k in networks.NETWORKS}
         words = [{"word": "hello", "start": 0.4, "duration": 0.3}, {"word": "there", "start": 1.2, "duration": 0.3}]
         muted = ClipPrediction(nets={k: v * 0.5 for k, v in nets.items()}) if sound_off else None
-        return ClipPrediction(nets=nets, words=words), muted, True
+        vertices = rng.normal(0, 1, (12, networks.N_VERTICES)).astype(np.float32)
+        return ClipPrediction(nets=nets, words=words, vertices=vertices), muted, True
 
 
 @pytest.fixture()
@@ -36,8 +37,8 @@ def client(tmp_path, monkeypatch):
         yield c
 
 
-def post(client, token="secret", name="reel.mp4", body=b"fake-video", sound_off="true"):
-    return client.post("/analyze", files={"file": (name, body, "video/mp4")}, data={"sound_off": sound_off}, headers={"Authorization": f"Bearer {token}"})
+def post(client, token="secret", name="reel.mp4", body=b"fake-video", sound_off="true", **extra):
+    return client.post("/analyze", files={"file": (name, body, "video/mp4")}, data={"sound_off": sound_off, **extra}, headers={"Authorization": f"Bearer {token}"})
 
 
 def test_requires_token(client):
@@ -62,6 +63,16 @@ def test_analyze_returns_scores_and_caches(client):
     assert service.app.state.runner.calls == 1
     post(client, sound_off="false")
     assert service.app.state.runner.calls == 2
+
+
+def test_brain_map_only_when_asked(client):
+    assert "brain" not in post(client).json()
+    brain = post(client, include_brain="true").json()["brain"]
+    assert brain["shape"] == [12, networks.N_VERTICES] and brain["mesh"] == "fsaverage5"
+    decoded = networks.decode_brain(brain)
+    assert decoded.shape == (12, networks.N_VERTICES)
+    lo, hi = brain["range"]
+    assert lo <= decoded.min() and decoded.max() <= hi
 
 
 def test_health(client):

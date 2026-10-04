@@ -24,7 +24,7 @@ const simulation = (hook: number) => ({
   sound_off_attention: [30, 35, 50, 45],
   scores: { hook: { value: hook, percentile: null, z: -1 }, hold: { value: 50, percentile: null }, ending: null, human_pull_opening: null, emotional_resonance: null, text_load_peak: null, message_clarity: null, sound_off_resilience: { value: 70, percentile: null } },
   facts: { first_face_second: 2, short_clip: true, speech_seconds: 0 },
-  moments: [{ kind: 'drop_risk', start: 1, end: 3, level: 30 }],
+  moments: [{ kind: 'drop_risk', start: 1, end: 3, level: 30, drivers: [{ system: 'visual_motion', direction: 'low', z: -1.2 }, { system: 'default_mode', direction: 'high', z: 0.9 }] }],
   transcript: [{ word: 'hello', start: 0.5, duration: 0.2 }],
   has_audio: true, model: 'facebook/tribev2', version: '1',
 });
@@ -108,6 +108,9 @@ describe('Pre-flight check', () => {
     expect(input.images.map((i) => i.label)).toEqual(expect.arrayContaining(['Frame at 0.0s', 'Frame at 1.0s', 'Frame at 2.0s', 'Frame at 3.0s']));
     expect(input.images[0].mediaType).toBe('image/jpeg');
     expect(input.simulation).toMatchObject({ baseline: 'clip', attentionBySecond: [40, 45, 60, 55], transcript: '[0.5s] hello' });
+    expect(input.simulation!.moments).toEqual([{ what: expect.stringContaining('attention dips'), fromSec: 1, toSec: 3, level: 30, becauseViewersAre: ['less tracking motion on screen than usual', 'more mind-wandering than usual'] }]);
+    expect(input.simulation!.responsesBySecond).toEqual({ 'noticing people and faces': [20, 30, 70, 60] });
+    expect(JSON.stringify(input.simulation)).not.toMatch(/visual_motion|default_mode|brain/);
     expect(input.facts).toMatchObject({ vertical: true, hasSoundtrack: true });
   });
 

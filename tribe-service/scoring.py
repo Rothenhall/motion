@@ -23,6 +23,10 @@ SHORT_CLIP_SECONDS = 15
 # Systems whose rise means "attending to the screen"; default mode rising means drifting off.
 ATTENTION_PARTS = ("attention", "visual_motion", "auditory", "faces")
 CURVES = ("attention_index", "faces", "language", "text_reading", "social", "auditory", "visual_motion", "scenes")
+# Systems that can explain a moment (the composite is what the moment is about, so it is left out).
+DRIVER_SYSTEMS = ("faces", "language", "text_reading", "social", "auditory", "visual_motion", "scenes", "early_visual", "attention", "default_mode")
+MAX_DRIVERS = 3
+DRIVER_MIN_Z = 0.5
 EPS = 1e-6
 
 
@@ -68,6 +72,13 @@ def percentile(samples: list[float] | None, value: float) -> float | None:
     if not samples:
         return None
     return round(100.0 * float(np.mean(np.asarray(samples) <= value)), 1)
+
+
+def drivers(zs: dict[str, np.ndarray], start: int, end: int) -> list[dict[str, Any]]:
+    """The systems that stand out most during [start, end): what likely explains the moment."""
+    window = {k: float(zs[k][start:end].mean()) for k in DRIVER_SYSTEMS if k in zs}
+    ranked = sorted(window.items(), key=lambda kv: -abs(kv[1]))
+    return [{"system": k, "direction": "high" if v > 0 else "low", "z": round(v, 2)} for k, v in ranked[:MAX_DRIVERS] if abs(v) >= DRIVER_MIN_Z]
 
 
 def analyze(
@@ -136,6 +147,8 @@ def analyze(
         moments.append({"kind": "text_overload", "start": start, "end": end, "level": to100(float(zs["text_reading"][start:end].mean()))})
     peak = int(np.argmax(att))
     moments.append({"kind": "peak", "start": peak, "end": peak + 1, "level": to100(float(att[peak]))})
+    for mo in moments:
+        mo["drivers"] = drivers(zs, mo["start"], mo["end"])
     moments.sort(key=lambda mo: (mo["start"], mo["kind"]))
 
     faces_on = np.flatnonzero(zs["faces"] > 0.5)

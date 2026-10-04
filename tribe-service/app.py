@@ -1,7 +1,8 @@
 """Motion audience simulation service: TRIBE v2 behind a small HTTP API.
 
-POST /analyze  (multipart: file=<video>, sound_off=true|false)
-  -> per-second curves (0-100), scores, flagged moments and a transcript.
+POST /analyze  (multipart: file=<video>, sound_off=true|false, include_brain=true|false)
+  -> per-second curves (0-100), scores, flagged moments and a transcript; with
+     include_brain, also the compressed per-second cortical map (see networks.encode_brain).
 GET  /health
 
 The Motion backend calls this when TRIBE_SERVICE_URL is set. Set TRIBE_SERVICE_TOKEN on
@@ -25,6 +26,7 @@ from typing import Any
 from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 
 import scoring
+from networks import encode_brain
 from runner import CACHE_DIR, MODEL_ID, TribeRunner
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
@@ -76,7 +78,12 @@ def health() -> dict[str, Any]:
 
 
 @app.post("/analyze")
-def analyze(file: UploadFile = File(...), sound_off: bool = Form(True), authorization: str | None = Header(None)) -> dict[str, Any]:
+def analyze(
+    file: UploadFile = File(...),
+    sound_off: bool = Form(True),
+    include_brain: bool = Form(False),
+    authorization: str | None = Header(None),
+) -> dict[str, Any]:
     check_token(authorization)
     suffix = Path(file.filename or "clip.mp4").suffix.lower() or ".mp4"
     if suffix not in VIDEO_SUFFIXES:
@@ -97,7 +104,7 @@ def analyze(file: UploadFile = File(...), sound_off: bool = Form(True), authoriz
             raise HTTPException(status_code=400, detail="empty file")
 
         ref = app.state.reference
-        key = f"{digest.hexdigest()}-{int(sound_off)}-{SERVICE_VERSION}-{(ref or {}).get('label', 'clip')}"
+        key = f"{digest.hexdigest()}-{int(sound_off)}-{int(include_brain)}-{SERVICE_VERSION}-{(ref or {}).get('label', 'clip')}"
         cached = CACHE_DIR / "results" / f"{hashlib.sha256(key.encode()).hexdigest()}.json"
         if cached.exists():
             return json.loads(cached.read_text())
@@ -115,6 +122,8 @@ def analyze(file: UploadFile = File(...), sound_off: bool = Form(True), authoriz
         "has_audio": has_audio,
         "transcript": full.words[:MAX_TRANSCRIPT_WORDS],
     })
+    if include_brain and full.vertices is not None:
+        result["brain"] = encode_brain(full.vertices)
     cached.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = cached.with_suffix(".tmp")
     tmp_path.write_text(json.dumps(result))

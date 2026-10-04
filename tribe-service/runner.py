@@ -28,6 +28,8 @@ MODEL_ID = os.getenv("TRIBE_MODEL_ID", "facebook/tribev2")
 class ClipPrediction:
     nets: dict[str, np.ndarray]
     words: list[dict] = field(default_factory=list)
+    # Per-second predictions on all 20,484 cortical vertices (for the optional brain map).
+    vertices: np.ndarray | None = None
 
     @property
     def speech_seconds(self) -> set[int]:
@@ -110,7 +112,8 @@ class TribeRunner:
     def _predict(self, video: Path) -> ClipPrediction:
         events = self._model.get_events_dataframe(video_path=str(video))
         preds, segments = self._model.predict(events=events, verbose=False)
-        return ClipPrediction(nets=networks.reduce(per_second(preds, segments), self._roi_map), words=words_from_events(events))
+        seconds = per_second(np.asarray(preds), segments).astype(np.float32)
+        return ClipPrediction(nets=networks.reduce(seconds, self._roi_map), words=words_from_events(events), vertices=seconds)
 
     def run(self, video: Path, sound_off: bool = True) -> tuple[ClipPrediction, ClipPrediction | None, bool]:
         """Returns (full clip, muted clip or None, whether the clip had audio)."""

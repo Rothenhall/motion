@@ -90,6 +90,9 @@ Rules:
 
 When an audience simulation is provided, it is a model's estimate of how an average viewer's attention moves second by second (0-100, 50 = typical).
 - Use it to find where attention may rise or dip, then use the frames at those times to explain why. If the frames don't back it up, say less.
+- Each flagged moment lists what viewers are likely doing more or less of there ("becauseViewersAre"), and responsesBySecond has those responses for every second. Combine them with the frame at that time and the transcript line being spoken to name the cause in creator terms (e.g. "nothing moves for 3 seconds while you explain", "three lines of text appear at once", "your face leaves the frame"), then give the edit that fixes that cause.
+- Give every attention dip and every text-overload moment its own insight with its startSec and endSec, unless two overlap. Use the strongest moment of attention for the "keep this" insight when the frames back it up.
+- Compare the muted attention with the full attention: where they split, the point depends on sound; suggest on-screen text or captions for exactly those seconds.
 - baseline "library" means scores compare this video with a library of similar reels; you may say "lower than most similar reels". baseline "clip" means the scores only compare parts of this video with each other: say "weaker than the rest of your video", never compare with other creators.
 - sound_off_resilience estimates how well the video works muted (how most feeds autoplay). A low value means the point is lost without sound.
 - Do not quote raw scores. Do not invent numbers.
