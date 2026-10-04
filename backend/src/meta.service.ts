@@ -3,6 +3,7 @@ import { Cron } from '@nestjs/schedule';
 import axios from 'axios';
 import { PrismaService } from './prisma.service';
 import { decryptToken, encryptToken, isEncryptedToken } from './auth/crypto';
+import { graphVersion } from './meta-config';
 
 const DAY = 86_400_000;
 
@@ -29,7 +30,7 @@ export class MetaService implements OnModuleInit {
   }
 
   private v() {
-    return process.env.META_GRAPH_VERSION || 'v22.0';
+    return graphVersion();
   }
 
   // ---------- Instagram (Business Login) ----------
@@ -54,7 +55,8 @@ export class MetaService implements OnModuleInit {
       params: {
         grant_type: 'ig_exchange_token',
         client_secret: clientSecret,
-        access_token: short.data.access_token,
+        // Documented as { data: [{ access_token, user_id, permissions }] }; often returned flat.
+        access_token: short.data?.data?.[0]?.access_token ?? short.data?.access_token,
       },
     });
     const token: string = long.data.access_token;
@@ -69,6 +71,7 @@ export class MetaService implements OnModuleInit {
       accountType: me.data.account_type,
       mediaCount: me.data.media_count,
     });
+    await this.subscribeInstagram(token);
 
     const imported = await this.importInstagramMedia(account.id, token).catch((e) => {
       this.log.warn(`IG media import failed: ${this.msg(e)}`);
@@ -125,8 +128,36 @@ export class MetaService implements OnModuleInit {
     for (const page of list) {
       // Page tokens don't expire once the user token is long-lived.
       await this.upsert(userId, 'facebook_page', String(page.id), page.name, page.access_token, null, { via: 'auto' });
+      await this.subscribePage(String(page.id), page.access_token);
     }
     return { name: list[0].name, count: list.length };
+  }
+
+  // ---------- Webhook subscriptions ----------
+  // Meta only delivers comment and message webhooks for accounts subscribed to
+  // the app, so every connect subscribes. A failure here doesn't block the
+  // connection (publishing still works); it is logged and tried again on reconnect.
+
+  /** Needs pages_manage_metadata and a Page token. */
+  async subscribePage(pageId: string, pageToken: string) {
+    try {
+      await axios.post(`https://graph.facebook.com/${this.v()}/${pageId}/subscribed_apps`, null, {
+        params: { subscribed_fields: 'feed,messages', access_token: pageToken },
+      });
+    } catch (e) {
+      this.log.warn(`Webhook subscription failed for Page ${pageId}: ${this.msg(e)}`);
+    }
+  }
+
+  /** Instagram Login: subscribe the account behind the token. */
+  async subscribeInstagram(token: string) {
+    try {
+      await axios.post(`https://graph.instagram.com/${this.v()}/me/subscribed_apps`, null, {
+        params: { subscribed_fields: 'comments,messages', access_token: token },
+      });
+    } catch (e) {
+      this.log.warn(`Instagram webhook subscription failed: ${this.msg(e)}`);
+    }
   }
 
   async importFacebookPosts(accountId: string, pageId: string, token: string): Promise<number> {
@@ -163,9 +194,38 @@ export class MetaService implements OnModuleInit {
 
   // ---------- Threads ----------
 
+  /** Threads has its own app ID and secret (Dashboard > Use cases > Threads API > Settings). */
+  threadsApp(): { id: string; secret: string } {
+    const id = process.env.META_THREADS_APP_ID;
+    const secret = process.env.META_THREADS_APP_SECRET;
+    if (!id || !secret) throw new Error('Threads is not set up on this server yet (META_THREADS_APP_ID and META_THREADS_APP_SECRET are missing).');
+    return { id, secret };
+  }
+
+  /** Threads OAuth: code -> short-lived token on graph.threads.net -> 60-day token via th_exchange_token. */
+  async threadsToken(code: string): Promise<{ token: string; expiresAt: Date }> {
+    const app = this.threadsApp();
+    const short = await axios.post(
+      'https://graph.threads.net/oauth/access_token',
+      new URLSearchParams({
+        client_id: app.id,
+        client_secret: app.secret,
+        grant_type: 'authorization_code',
+        redirect_uri: process.env.META_THREADS_REDIRECT_URL!,
+        code,
+      }),
+    );
+    const long = await axios.get('https://graph.threads.net/access_token', {
+      params: { grant_type: 'th_exchange_token', client_secret: app.secret, access_token: short.data.access_token },
+    });
+    return {
+      token: long.data.access_token,
+      expiresAt: new Date(Date.now() + (long.data.expires_in ?? 5_184_000) * 1000),
+    };
+  }
+
   async connectThreads(code: string, userId: string): Promise<{ name: string; imported: number }> {
-    const redirect = process.env.META_THREADS_REDIRECT_URL!;
-    const longToken = await this.longLivedUserToken(code, redirect);
+    const longToken = await this.threadsToken(code);
     const me = await axios.get('https://graph.threads.net/v1.0/me', {
       params: { fields: 'id,username', access_token: longToken.token },
     });
@@ -285,6 +345,15 @@ export class MetaService implements OnModuleInit {
             data: { accessToken: encryptToken(r.data.access_token), tokenExpires: new Date(Date.now() + (r.data.expires_in ?? 5_184_000) * 1000) },
           });
           this.log.log(`Refreshed Instagram token for ${a.name || a.externalId}`);
+        } else if (a.provider === 'threads') {
+          const r = await axios.get('https://graph.threads.net/refresh_access_token', {
+            params: { grant_type: 'th_refresh_token', access_token: current },
+          });
+          await this.prisma.socialAccount.update({
+            where: { id: a.id },
+            data: { accessToken: encryptToken(r.data.access_token), tokenExpires: new Date(Date.now() + (r.data.expires_in ?? 5_184_000) * 1000) },
+          });
+          this.log.log(`Refreshed Threads token for ${a.name || a.externalId}`);
         } else {
           const r = await axios.get(`https://graph.facebook.com/${this.v()}/oauth/access_token`, {
             params: {
