@@ -14,6 +14,9 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   accounts     SocialAccount[]
+  brandProfile BrandProfile?
+  ideas        ContentIdea[]
+  hooks        Hook[]
 }
 
 model SocialAccount {
@@ -118,4 +121,59 @@ model CommentEvent {
   createdAt   DateTime @default(now())
 
   @@unique([accountId, commentId])
+}
+
+// ---- AI layer: brand context, generated ideas, hook library ----
+
+model BrandProfile {
+  id              String    @id @default(cuid())
+  userId          String    @unique // one brand profile per user
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  niche           String    // what the brand posts about
+  audience        String?   // who it is for
+  voice           String?   // tone of voice
+  pillars         String    @default("[]") // JSON array of content pillars
+  platforms       String    @default("[\"instagram\"]") // JSON array: instagram | facebook | threads
+  autopilot       Boolean   @default(false) // generate fresh ideas every morning
+  ideasPerRun     Int       @default(5)
+  lastAutopilotAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+model ContentIdea {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  hook      String   // opening line
+  angle     String?  // why this works / the take
+  format    String   // REEL | CAROUSEL | IMAGE | THREAD | TEXT | STORY
+  platform  String   // instagram | facebook | threads
+  pillar    String?
+  caption   String?
+  hashtags  String   @default("[]") // JSON array
+  status    String   @default("NEW") // NEW | SAVED | USED | DISMISSED
+  source    String   @default("MANUAL") // MANUAL | AUTOPILOT
+  topic     String?  // the prompt topic it came from
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, status, createdAt])
+}
+
+model Hook {
+  id         String   @id @default(cuid())
+  userId     String   // each user gets their own copy of the starter hooks, so favorites stay personal
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  text       String   // may contain [placeholders]
+  category   String   // CURIOSITY | CONTRARIAN | STORY | LISTICLE | QUESTION | PROOF | PAIN | HOW_TO
+  platform   String?  // null = works anywhere
+  source     String   @default("SEED") // SEED | AI | CUSTOM
+  topic      String?  // topic it was written for (AI hooks)
+  isFavorite Boolean  @default(false)
+  usedCount  Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  @@index([userId, category])
 }

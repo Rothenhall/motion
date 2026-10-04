@@ -42,6 +42,13 @@ ngrok http 3001
 # set META_WEBHOOK_CALLBACK_URL=https://<ngrok>/webhooks/meta
 ```
 
+## AI ideas and hook library
+
+`/ideas` generates post ideas (hook, angle, format, caption, hashtags) from a brand profile, and `/hooks` is a
+hook library: 32 starter hooks, AI-written hooks for a topic, your own, and favorites. Both call Claude through
+the Anthropic SDK (`backend/src/ai/`). Set `ANTHROPIC_API_KEY` in `backend/.env`; `ANTHROPIC_MODEL` overrides
+the default `claude-opus-5-5`. Turning on autopilot in the brand profile adds fresh ideas every day at 7am.
+
 ## Security
 
 - Every API route needs a signed-in Motion user (`Authorization: Bearer <token>` from `POST /auth/register` or `POST /auth/login`). Only sign-up/sign-in, the Meta OAuth callbacks, the webhook endpoint and `/media/*` files are public.

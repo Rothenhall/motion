@@ -10,6 +10,8 @@ import { api, getToken, signOut } from '../lib/api';
 const primaryLinks = [
   { href: '/', label: 'Overview', icon: 'grid' as const },
   { href: '/planner', label: 'Planner', icon: 'calendar' as const },
+  { href: '/ideas', label: 'Ideas', icon: 'bulb' as const },
+  { href: '/hooks', label: 'Hook library', icon: 'sparkles' as const },
   { href: '/automations', label: 'Automations', icon: 'zap' as const, badge: '3' },
   { href: '/comments', label: 'Inbox', icon: 'inbox' as const, badge: '12' },
 ];
@@ -22,6 +24,8 @@ const manageLinks = [
 const titles: Record<string, { eyebrow: string; title: string }> = {
   '/': { eyebrow: 'Workspace', title: 'Overview' },
   '/planner': { eyebrow: 'Workspace', title: 'Content planner' },
+  '/ideas': { eyebrow: 'Create', title: 'Content ideas' },
+  '/hooks': { eyebrow: 'Create', title: 'Hook library' },
   '/automations': { eyebrow: 'Engagement', title: 'Automations' },
   '/comments': { eyebrow: 'Engagement', title: 'Inbox' },
   '/connect': { eyebrow: 'Workspace', title: 'Connections' },

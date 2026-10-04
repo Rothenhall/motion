@@ -19,10 +19,15 @@ import { UsersController } from './auth/users.controller';
 import { AuthGuard } from './auth/auth.guard';
 import { InsightsService } from './insights.service';
 import { AnalyticsController } from './analytics.controller';
+import { ClaudeService } from './ai/claude.service';
+import { IdeasService } from './ai/ideas.service';
+import { IdeasController } from './ai/ideas.controller';
+import { HooksService } from './ai/hooks.service';
+import { HooksController } from './ai/hooks.controller';
 
 @Module({
   imports: [ConfigModule.forRoot({ isGlobal: true }), ScheduleModule.forRoot()],
-  controllers: [UsersController, AuthController, PostsController, AccountsController, AutomationsController, CommentsController, WebhooksController, DashboardController, MediaController, AnalyticsController],
-  providers: [{ provide: APP_GUARD, useClass: AuthGuard }, PrismaService, SchedulerService, PublishersService, AutomationsService, MetaService, InsightsService],
+  controllers: [UsersController, AuthController, PostsController, AccountsController, AutomationsController, CommentsController, WebhooksController, DashboardController, MediaController, AnalyticsController, IdeasController, HooksController],
+  providers: [{ provide: APP_GUARD, useClass: AuthGuard }, PrismaService, SchedulerService, PublishersService, AutomationsService, MetaService, InsightsService, ClaudeService, IdeasService, HooksService],
 })
 export class AppModule {}

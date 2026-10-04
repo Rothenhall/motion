@@ -90,7 +90,11 @@ export default function Home() {
 
   useEffect(() => {
     load();
-    if (new URLSearchParams(window.location.search).get('compose') === 'true') setComposerOpen(true);
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('compose') === 'true') setComposerOpen(true);
+    // Ideas and hooks hand their text over through ?caption= so the composer opens pre-filled.
+    const caption = params.get('caption');
+    if (caption) setForm((current) => ({ ...current, caption }));
   }, []);
 
   useEffect(() => {

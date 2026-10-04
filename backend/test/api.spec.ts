@@ -46,6 +46,8 @@ describe('API security', () => {
       ['get', '/comments/events'], ['post', '/comments/reply'],
       ['get', '/dashboard'], ['post', '/media/upload'],
       ['get', '/analytics'], ['post', '/analytics/sync'],
+      ['get', '/brand-profile'], ['put', '/brand-profile'], ['get', '/ideas'], ['post', '/ideas/generate'], ['patch', '/ideas/x'], ['delete', '/ideas/x'],
+      ['get', '/hooks'], ['post', '/hooks'], ['post', '/hooks/generate'], ['patch', '/hooks/x/favorite'], ['post', '/hooks/x/use'], ['delete', '/hooks/x'],
       ['get', '/auth/me'], ['get', '/auth/instagram/start'], ['post', '/auth/exchange'],
     ];
 
@@ -141,6 +143,47 @@ describe('API security', () => {
       expect(theirs.totals.views).toBe(0);
       expect(theirs.totals.followers).toBeNull();
       expect(theirs.channels.map((c: any) => c.accountId)).not.toContain(bobAccount);
+    });
+  });
+
+  describe('AI ideas and hooks are scoped to their owner', () => {
+    const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
+
+    it('keeps brand profiles separate', async () => {
+      await http().put('/brand-profile').set(auth(bob)).send({ niche: 'Coffee roasting', platforms: ['instagram'] }).expect(200);
+      expect((await http().get('/brand-profile').set(auth(bob)).expect(200)).body.niche).toBe('Coffee roasting');
+      expect((await http().get('/brand-profile').set(auth(alice)).expect(200)).body).toEqual({});
+    });
+
+    it('hides and protects another user\'s ideas', async () => {
+      const bobUser = (await http().get('/auth/me').set(auth(bob)).expect(200)).body.id;
+      const idea = await prisma.contentIdea.create({ data: { userId: bobUser, title: 'Bob idea', hook: 'h', format: 'REEL', platform: 'instagram' } });
+      expect((await http().get('/ideas').set(auth(bob)).expect(200)).body.map((i: any) => i.id)).toEqual([idea.id]);
+      expect((await http().get('/ideas').set(auth(alice)).expect(200)).body).toEqual([]);
+      await http().patch(`/ideas/${idea.id}`).set(auth(alice)).send({ status: 'SAVED' }).expect(404);
+      await http().delete(`/ideas/${idea.id}`).set(auth(alice)).expect(204);
+      expect(await prisma.contentIdea.findUnique({ where: { id: idea.id } })).not.toBeNull();
+    });
+
+    it('gives each user their own starter hooks and favorites', async () => {
+      const [a, b] = await Promise.all([
+        http().get('/hooks').set(auth(alice)).expect(200),
+        http().get('/hooks').set(auth(bob)).expect(200),
+      ]);
+      expect(a.body.length).toBeGreaterThan(0);
+      expect(b.body.length).toBe(a.body.length);
+      // A second load doesn't seed again.
+      expect((await http().get('/hooks').set(auth(alice)).expect(200)).body.length).toBe(a.body.length);
+
+      const bobHook = b.body[0].id;
+      await http().patch(`/hooks/${bobHook}/favorite`).set(auth(alice)).expect(404);
+      await http().post(`/hooks/${bobHook}/use`).set(auth(alice)).expect(404);
+      await http().patch(`/hooks/${bobHook}/favorite`).set(auth(bob)).expect(200);
+      expect((await http().get('/hooks?favorites=true').set(auth(alice)).expect(200)).body).toEqual([]);
+
+      const custom = await http().post('/hooks').set(auth(alice)).send({ text: 'Alice only hook' }).expect(201);
+      expect((await http().get('/hooks?q=alice only').set(auth(bob)).expect(200)).body).toEqual([]);
+      expect((await http().get('/hooks?q=alice only').set(auth(alice)).expect(200)).body.map((h: any) => h.id)).toEqual([custom.body.id]);
     });
   });
 

@@ -35,7 +35,10 @@ type IconName =
   | 'sun'
   | 'moon'
   | 'command'
-  | 'x';
+  | 'x'
+  | 'star'
+  | 'copy'
+  | 'bulb';
 
 const paths: Record<IconName, React.ReactNode> = {
   grid: <><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></>,
@@ -71,6 +74,9 @@ const paths: Record<IconName, React.ReactNode> = {
   moon: <path d="M20 13.5A8 8 0 0 1 10.5 4 8 8 0 1 0 20 13.5Z" />,
   command: <><path d="M9 9V6a2 2 0 1 0-2 2h3ZM9 9H6a2 2 0 1 0 2 2v-3ZM9 9h3v3a2 2 0 1 1-2-2V9Zm6-3h3a2 2 0 1 1-2 2v-3ZM15 6v3h-3a2 2 0 1 0 2-2V6Zm0 9v3a2 2 0 1 0 2-2h-3Zm0 0h3a2 2 0 1 1-2 2v-3Zm-6 3v-3h3a2 2 0 1 1-2 2H9Z" /></>,
   x: <path d="M6 6l12 12M18 6 6 18" />,
+  star: <path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3 6.4 20.2l1.1-6.2L3 9.6l6.2-.9L12 3Z" />,
+  copy: <><rect x="8" y="8" width="13" height="13" rx="2" /><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" /></>,
+  bulb: <><path d="M9 18h6M10 21h4" /><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3Z" /></>,
 };
 
 export function Icon({ name, size = 18, strokeWidth = 1.8, className = '' }: { name: IconName; size?: number; strokeWidth?: number; className?: string }) {
