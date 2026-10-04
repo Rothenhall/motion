@@ -14,10 +14,15 @@ import { PublishersService } from './publishers.service';
 import { AutomationsService } from './automations.service';
 import { MetaService } from './meta.service';
 import { DashboardController } from './dashboard.controller';
+import { ClaudeService } from './ai/claude.service';
+import { IdeasService } from './ai/ideas.service';
+import { IdeasController } from './ai/ideas.controller';
+import { HooksService } from './ai/hooks.service';
+import { HooksController } from './ai/hooks.controller';
 
 @Module({
   imports: [ConfigModule.forRoot({ isGlobal: true }), ScheduleModule.forRoot()],
-  controllers: [AuthController, PostsController, AccountsController, AutomationsController, CommentsController, WebhooksController, DashboardController, MediaController],
-  providers: [PrismaService, SchedulerService, PublishersService, AutomationsService, MetaService],
+  controllers: [AuthController, PostsController, AccountsController, AutomationsController, CommentsController, WebhooksController, DashboardController, MediaController, IdeasController, HooksController],
+  providers: [PrismaService, SchedulerService, PublishersService, AutomationsService, MetaService, ClaudeService, IdeasService, HooksService],
 })
 export class AppModule {}
