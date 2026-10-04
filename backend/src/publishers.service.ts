@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import axios from 'axios';
 import { PrismaService } from './prisma.service';
+import { decryptToken } from './auth/crypto';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -15,10 +16,11 @@ export class PublishersService {
     await this.prisma.scheduledPost.update({ where: { id: postId }, data: { status: 'PUBLISHING', error: null } });
     try {
       const urls: string[] = JSON.parse(post.mediaUrls || '[]');
+      const account = { ...post.account, accessToken: decryptToken(post.account.accessToken) };
       let externalId = '';
-      if (post.platform === 'instagram') externalId = await this.publishInstagram(post.account, post.caption, urls, post.mediaType);
-      else if (post.platform === 'facebook') externalId = await this.publishFacebook(post.account, post.caption, urls, post.mediaType);
-      else if (post.platform === 'threads') externalId = await this.publishThreads(post.account, post.caption, urls, post.mediaType);
+      if (post.platform === 'instagram') externalId = await this.publishInstagram(account, post.caption, urls, post.mediaType);
+      else if (post.platform === 'facebook') externalId = await this.publishFacebook(account, post.caption, urls, post.mediaType);
+      else if (post.platform === 'threads') externalId = await this.publishThreads(account, post.caption, urls, post.mediaType);
       else throw new Error(`unknown platform ${post.platform}`);
       await this.prisma.scheduledPost.update({ where: { id: postId }, data: { status: 'PUBLISHED', externalId } });
     } catch (e: any) {
@@ -65,7 +67,8 @@ export class PublishersService {
       return r.data.id;
     }
     const r = await axios.post(`https://graph.facebook.com/${v}/${acc.externalId}/photos`, { url: first, caption, access_token: acc.accessToken });
-    return r.data.id || r.data.post_id;
+    // post_id is the feed post (what insights and imports key on); id is the photo.
+    return r.data.post_id || r.data.id;
   }
 
   // Threads: POST /{user-id}/threads then /threads_publish (wait ~30s)

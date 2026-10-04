@@ -3,72 +3,132 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite" // switch to "postgresql" later, keep models unchanged
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-model SocialAccount {
-  id            String   @id @default(cuid())
-  provider      String   // facebook_page | instagram | threads
-  externalId    String   // Page ID / IG ID / Threads User ID
-  name          String?
-  accessToken   String
-  tokenExpires  DateTime?
-  meta          String?  // JSON: username, followers/media counts, profile pic
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  posts         ScheduledPost[]
-  rules         AutomationRule[]
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  accounts     SocialAccount[]
+  brandProfile BrandProfile?
+  ideas        ContentIdea[]
+  hooks        Hook[]
+}
 
-  @@unique([provider, externalId])
+model SocialAccount {
+  id               String           @id @default(cuid())
+  userId           String? // null only for channels connected before user accounts existed
+  user             User?            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider         String // facebook_page | instagram | threads
+  externalId       String // Page ID / IG ID / Threads User ID
+  name             String?
+  accessToken      String // AES-256-GCM ciphertext ("enc:v1:..."), see src/auth/crypto.ts
+  tokenExpires     DateTime?
+  meta             String? // JSON: username, followers/media counts, profile pic
+  insightsSyncedAt DateTime?
+  insightsError    String? // last insights sync failure (e.g. missing permission)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  posts            ScheduledPost[]
+  rules            AutomationRule[]
+  comments         CommentEvent[]
+  insights         AccountInsight[]
+  postInsights     PostInsight[]
+
+  @@unique([userId, provider, externalId])
+  @@index([provider, externalId])
 }
 
 model ScheduledPost {
-  id          String   @id @default(cuid())
+  id          String        @id @default(cuid())
   accountId   String
   account     SocialAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  platform    String   // instagram | facebook | threads
-  mediaType   String   // TEXT | IMAGE | VIDEO | REELS | STORIES | CAROUSEL
+  platform    String // instagram | facebook | threads
+  mediaType   String // TEXT | IMAGE | VIDEO | REELS | STORIES | CAROUSEL
   caption     String?
-  mediaUrls   String   // JSON array string
+  mediaUrls   String // JSON array string
   scheduledAt DateTime
-  status      String   @default("SCHEDULED") // SCHEDULED|PUBLISHING|PUBLISHED|FAILED
+  status      String        @default("SCHEDULED") // SCHEDULED|PUBLISHING|PUBLISHED|FAILED
   externalId  String?
   error       String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  permalink   String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  insight     PostInsight?
+}
+
+/// One normalized account-level metric for one UTC day.
+/// metric: followers | views | reach | engagements
+model AccountInsight {
+  id        String        @id @default(cuid())
+  accountId String
+  account   SocialAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  date      DateTime // UTC midnight
+  metric    String
+  value     Int
+  updatedAt DateTime      @updatedAt
+
+  @@unique([accountId, date, metric])
+  @@index([date])
+}
+
+/// Latest lifetime metrics for a published post. Null = platform doesn't report it.
+model PostInsight {
+  id          String        @id @default(cuid())
+  postId      String        @unique
+  post        ScheduledPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  accountId   String
+  account     SocialAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  views       Int?
+  reach       Int?
+  likes       Int?
+  comments    Int?
+  shares      Int?
+  saves       Int?
+  engagements Int?
+  fetchedAt   DateTime      @default(now())
 }
 
 model AutomationRule {
-  id          String   @id @default(cuid())
+  id          String        @id @default(cuid())
   accountId   String
   account     SocialAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
   name        String
-  trigger     String   @default("COMMENT_KEYWORD") // COMMENT_KEYWORD | ALL_COMMENTS
+  trigger     String        @default("COMMENT_KEYWORD") // COMMENT_KEYWORD | ALL_COMMENTS
   keyword     String?
-  replyMode   String   @default("PUBLIC_AND_DM") // PUBLIC | DM | PUBLIC_AND_DM
+  replyMode   String        @default("PUBLIC_AND_DM") // PUBLIC | DM | PUBLIC_AND_DM
   publicReply String?
   dmText      String?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
+  isActive    Boolean       @default(true)
+  createdAt   DateTime      @default(now())
 }
 
 model CommentEvent {
   id          String   @id @default(cuid())
+  accountId   String?  // the connected channel the comment arrived on; null for events from before scoping
+  account     SocialAccount? @relation(fields: [accountId], references: [id], onDelete: Cascade)
   platform    String
   mediaId     String?
-  commentId   String   @unique
+  commentId   String
   senderId    String?
   text        String?
   replied     Boolean  @default(false)
   dmSent      Boolean  @default(false)
   createdAt   DateTime @default(now())
+
+  @@unique([accountId, commentId])
 }
 
 // ---- AI layer: brand context, generated ideas, hook library ----
 
 model BrandProfile {
   id              String    @id @default(cuid())
+  userId          String    @unique // one brand profile per user
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   niche           String    // what the brand posts about
   audience        String?   // who it is for
   voice           String?   // tone of voice
@@ -83,6 +143,8 @@ model BrandProfile {
 
 model ContentIdea {
   id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   title     String
   hook      String   // opening line
   angle     String?  // why this works / the take
@@ -97,11 +159,13 @@ model ContentIdea {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([status, createdAt])
+  @@index([userId, status, createdAt])
 }
 
 model Hook {
   id         String   @id @default(cuid())
+  userId     String   // each user gets their own copy of the starter hooks, so favorites stay personal
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   text       String   // may contain [placeholders]
   category   String   // CURIOSITY | CONTRARIAN | STORY | LISTICLE | QUESTION | PROOF | PAIN | HOW_TO
   platform   String?  // null = works anywhere
@@ -111,5 +175,5 @@ model Hook {
   usedCount  Int      @default(0)
   createdAt  DateTime @default(now())
 
-  @@index([category])
+  @@index([userId, category])
 }

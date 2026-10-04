@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { Icon } from './Icons';
 import CommandPalette from './CommandPalette';
+import { api, getToken, signOut } from '../lib/api';
 
 const primaryLinks = [
   { href: '/', label: 'Overview', icon: 'grid' as const },
@@ -44,11 +45,19 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [navOpen, setNavOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [dark, setDark] = useState(false);
+  const [user, setUser] = useState<{ email: string } | null>(null);
+  const isAuthPage = pathname === '/login';
   const isCurrent = (href: string) => (href === '/' ? pathname === '/' : pathname.startsWith(href));
 
   useEffect(() => {
     setDark(initialTheme());
   }, []);
+
+  useEffect(() => {
+    if (isAuthPage) return;
+    if (!getToken()) { signOut(); return; }
+    api<{ email: string }>('/auth/me').then(setUser).catch(() => { /* api() redirects on 401 */ });
+  }, [isAuthPage]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? 'dark' : 'light';
@@ -84,6 +93,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       document.body.style.overflow = '';
     };
   }, [navOpen]);
+
+  if (isAuthPage) return <>{children}</>;
+  if (!user) return null;
+
+  const initial = user.email.charAt(0).toUpperCase();
 
   return (
     <div className="app-shell">
@@ -147,9 +161,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <button className="sidebar-footer-link" type="button">
             <Icon name="help" size={16} /><span>Help center</span><span className="shortcut">?</span>
           </button>
-          <button className="user-row" type="button" aria-label="Account settings for Nitish">
-            <div className="user-avatar" aria-hidden="true">N</div>
-            <div className="user-copy"><strong>Nitish</strong><small>nitish@rothenhall.com</small></div>
+          <button className="user-row" type="button" aria-label={`Sign out ${user.email}`} title="Sign out" onClick={signOut}>
+            <div className="user-avatar" aria-hidden="true">{initial}</div>
+            <div className="user-copy"><strong>Sign out</strong><small>{user.email}</small></div>
             <Icon name="more" size={17} />
           </button>
           <div className="version-tag">motion 0.1.0 · Beta</div>
@@ -190,7 +204,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <button className="icon-button notification-button" type="button" aria-label="Notifications, 3 unread">
               <Icon name="bell" size={19} /><i aria-hidden="true" />
             </button>
-            <button className="topbar-avatar" type="button" aria-label="Open profile menu">N</button>
+            <button className="topbar-avatar" type="button" aria-label="Open profile menu">{initial}</button>
           </div>
         </header>
         <div className="content-area" id="main-content" tabIndex={-1}>{children}</div>

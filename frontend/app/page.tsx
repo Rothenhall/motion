@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Icon } from '../components/Icons';
-import { API, api } from '../lib/api';
+import { API, api, authHeaders } from '../lib/api';
 
 type Account = { id: string; provider: string; externalId: string; name?: string | null };
 type Post = { id: string; platform: string; mediaType: string; caption?: string | null; scheduledAt: string; status: string; error?: string | null; account?: Account };
@@ -52,7 +52,7 @@ export default function Home() {
       for (const file of Array.from(files)) {
         const body = new FormData();
         body.append('file', file);
-        const res = await fetch(`${API}/media/upload`, { method: 'POST', body });
+        const res = await fetch(`${API}/media/upload`, { method: 'POST', body, headers: authHeaders() });
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
           throw new Error(err.message || 'Upload failed.');

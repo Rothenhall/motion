@@ -1,0 +1,54 @@
+-- AlterTable
+ALTER TABLE "ScheduledPost" ADD COLUMN     "permalink" TEXT;
+
+-- AlterTable
+ALTER TABLE "SocialAccount" ADD COLUMN     "insightsError" TEXT,
+ADD COLUMN     "insightsSyncedAt" TIMESTAMP(3);
+
+-- CreateTable
+CREATE TABLE "AccountInsight" (
+    "id" TEXT NOT NULL,
+    "accountId" TEXT NOT NULL,
+    "date" TIMESTAMP(3) NOT NULL,
+    "metric" TEXT NOT NULL,
+    "value" INTEGER NOT NULL,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "AccountInsight_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "PostInsight" (
+    "id" TEXT NOT NULL,
+    "postId" TEXT NOT NULL,
+    "accountId" TEXT NOT NULL,
+    "views" INTEGER,
+    "reach" INTEGER,
+    "likes" INTEGER,
+    "comments" INTEGER,
+    "shares" INTEGER,
+    "saves" INTEGER,
+    "engagements" INTEGER,
+    "fetchedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "PostInsight_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateIndex
+CREATE INDEX "AccountInsight_date_idx" ON "AccountInsight"("date");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "AccountInsight_accountId_date_metric_key" ON "AccountInsight"("accountId", "date", "metric");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "PostInsight_postId_key" ON "PostInsight"("postId");
+
+-- AddForeignKey
+ALTER TABLE "AccountInsight" ADD CONSTRAINT "AccountInsight_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "SocialAccount"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PostInsight" ADD CONSTRAINT "PostInsight_postId_fkey" FOREIGN KEY ("postId") REFERENCES "ScheduledPost"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PostInsight" ADD CONSTRAINT "PostInsight_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "SocialAccount"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+

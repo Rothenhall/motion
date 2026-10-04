@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma.service';
 import { BrandContext, ClaudeService, PLATFORMS } from './claude.service';
@@ -25,14 +25,14 @@ export class IdeasService {
 
   constructor(private prisma: PrismaService, private claude: ClaudeService) {}
 
-  // ---- brand profile (one per workspace until user accounts land) ----
+  // ---- brand profile (one per user) ----
 
-  async getProfile() {
-    const profile = await this.prisma.brandProfile.findFirst({ orderBy: { createdAt: 'asc' } });
+  async getProfile(userId: string) {
+    const profile = await this.prisma.brandProfile.findUnique({ where: { userId } });
     return profile ? serializeProfile(profile) : null;
   }
 
-  async saveProfile(body: ProfileInput) {
+  async saveProfile(userId: string, body: ProfileInput) {
     const niche = body.niche?.trim();
     if (!niche) throw new BadRequestException('Describe what your brand posts about.');
     const platforms = cleanList(body.platforms, 'Platforms');
@@ -48,26 +48,23 @@ export class IdeasService {
       autopilot: Boolean(body.autopilot),
       ideasPerRun,
     };
-    const existing = await this.prisma.brandProfile.findFirst({ orderBy: { createdAt: 'asc' }, select: { id: true } });
-    const saved = existing
-      ? await this.prisma.brandProfile.update({ where: { id: existing.id }, data })
-      : await this.prisma.brandProfile.create({ data });
+    const saved = await this.prisma.brandProfile.upsert({ where: { userId }, update: data, create: { userId, ...data } });
     return serializeProfile(saved);
   }
 
   // ---- ideas ----
 
-  async list(status?: string) {
+  async list(userId: string, status?: string) {
     const ideas = await this.prisma.contentIdea.findMany({
-      where: status ? { status } : { status: { not: 'DISMISSED' } },
+      where: { userId, ...(status ? { status } : { status: { not: 'DISMISSED' } }) },
       orderBy: { createdAt: 'desc' },
       take: 200,
     });
     return ideas.map(serializeIdea);
   }
 
-  async generate(opts: { topic?: string; platform?: string; count?: number; source?: 'MANUAL' | 'AUTOPILOT' }) {
-    const profile = await this.getProfile();
+  async generate(userId: string, opts: { topic?: string; platform?: string; count?: number; source?: 'MANUAL' | 'AUTOPILOT' }) {
+    const profile = await this.getProfile(userId);
     if (!profile) throw new BadRequestException('Set up your brand profile first so ideas fit your niche.');
     const count = opts.count ?? 5;
     if (!Number.isInteger(count) || count < 1 || count > MAX_IDEAS) throw new BadRequestException(`Ask for between 1 and ${MAX_IDEAS} ideas.`);
@@ -75,8 +72,8 @@ export class IdeasService {
     const topic = opts.topic?.trim().slice(0, 300) || undefined;
 
     const [recent, favorites] = await Promise.all([
-      this.prisma.contentIdea.findMany({ orderBy: { createdAt: 'desc' }, take: 30, select: { title: true } }),
-      this.prisma.hook.findMany({ where: { isFavorite: true }, orderBy: { usedCount: 'desc' }, take: 8, select: { text: true } }),
+      this.prisma.contentIdea.findMany({ where: { userId }, orderBy: { createdAt: 'desc' }, take: 30, select: { title: true } }),
+      this.prisma.hook.findMany({ where: { userId, isFavorite: true }, orderBy: { usedCount: 'desc' }, take: 8, select: { text: true } }),
     ]);
     const brand: BrandContext = { niche: profile.niche, audience: profile.audience, voice: profile.voice, pillars: profile.pillars };
     const ideas = await this.claude.generateIdeas({
@@ -91,6 +88,7 @@ export class IdeasService {
     const source = opts.source ?? 'MANUAL';
     const created = await this.prisma.$transaction(ideas.map((idea) => this.prisma.contentIdea.create({
       data: {
+        userId,
         title: idea.title.trim(),
         hook: idea.hook.trim(),
         angle: idea.angle.trim() || null,
@@ -106,30 +104,32 @@ export class IdeasService {
     return created.map(serializeIdea);
   }
 
-  async setStatus(id: string, status?: string) {
+  async setStatus(userId: string, id: string, status?: string) {
     if (!status || !['NEW', 'SAVED', 'USED', 'DISMISSED'].includes(status)) throw new BadRequestException('Choose a supported status.');
-    const idea = await this.prisma.contentIdea.findUnique({ where: { id }, select: { id: true } });
-    if (!idea) throw new BadRequestException('Idea not found.');
+    const idea = await this.prisma.contentIdea.findFirst({ where: { id, userId }, select: { id: true } });
+    if (!idea) throw new NotFoundException('Idea not found.');
     return serializeIdea(await this.prisma.contentIdea.update({ where: { id }, data: { status } }));
   }
 
-  async remove(id: string) {
-    await this.prisma.contentIdea.deleteMany({ where: { id } });
+  async remove(userId: string, id: string) {
+    await this.prisma.contentIdea.deleteMany({ where: { id, userId } });
   }
 
   // ---- autopilot ----
 
   @Cron(CronExpression.EVERY_DAY_AT_7AM)
   async autopilot() {
-    const profile = await this.prisma.brandProfile.findFirst({ where: { autopilot: true }, orderBy: { createdAt: 'asc' } });
-    if (!profile || !this.claude.configured) return;
-    if (profile.lastAutopilotAt && Date.now() - profile.lastAutopilotAt.getTime() < AUTOPILOT_GAP_MS) return;
-    await this.prisma.brandProfile.update({ where: { id: profile.id }, data: { lastAutopilotAt: new Date() } });
-    try {
-      const ideas = await this.generate({ count: profile.ideasPerRun, source: 'AUTOPILOT' });
-      this.log.log(`Autopilot added ${ideas.length} ideas`);
-    } catch (error) {
-      this.log.error(`Autopilot failed: ${error instanceof Error ? error.message : error}`);
+    if (!this.claude.configured) return;
+    const profiles = await this.prisma.brandProfile.findMany({ where: { autopilot: true }, orderBy: { createdAt: 'asc' } });
+    for (const profile of profiles) {
+      if (profile.lastAutopilotAt && Date.now() - profile.lastAutopilotAt.getTime() < AUTOPILOT_GAP_MS) continue;
+      await this.prisma.brandProfile.update({ where: { id: profile.id }, data: { lastAutopilotAt: new Date() } });
+      try {
+        const ideas = await this.generate(profile.userId, { count: profile.ideasPerRun, source: 'AUTOPILOT' });
+        this.log.log(`Autopilot added ${ideas.length} ideas for user ${profile.userId}`);
+      } catch (error) {
+        this.log.error(`Autopilot failed for user ${profile.userId}: ${error instanceof Error ? error.message : error}`);
+      }
     }
   }
 }
