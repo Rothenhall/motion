@@ -5,7 +5,7 @@ import { rmSync } from 'fs';
 import { join } from 'path';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
-import { ClaudeService, PreflightInput, PreflightReport } from '../src/ai/claude.service';
+import { AiService, PreflightInput, PreflightReport } from '../src/ai/ai.service';
 import { UPLOAD_DIR } from '../src/media.controller';
 import { PrismaService } from '../src/prisma.service';
 import { TribeClient } from '../src/preflight/tribe.client';
@@ -35,7 +35,7 @@ describe('Pre-flight check', () => {
   let alice: string;
   let bob: string;
   const files: string[] = [];
-  const claude = { configured: true, model: 'test-model', reviewContent: jest.fn(async (_: PreflightInput) => report(40)) };
+  const ai = { configured: true, model: 'test-model', reviewContent: jest.fn(async (_: PreflightInput) => report(40)) };
   const tribe = { configured: true, analyze: jest.fn(async (_path: string, _opts: { soundOff: boolean }) => simulation(30)) };
 
   const http = () => request(app.getHttpServer());
@@ -64,7 +64,7 @@ describe('Pre-flight check', () => {
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(ClaudeService).useValue(claude)
+      .overrideProvider(AiService).useValue(ai)
       .overrideProvider(TribeClient).useValue(tribe)
       .compile();
     app = moduleRef.createNestApplication();
@@ -82,9 +82,9 @@ describe('Pre-flight check', () => {
   });
 
   beforeEach(() => {
-    claude.configured = true;
+    ai.configured = true;
     tribe.configured = true;
-    claude.reviewContent.mockClear();
+    ai.reviewContent.mockClear();
     tribe.analyze.mockClear();
   });
 
@@ -103,7 +103,7 @@ describe('Pre-flight check', () => {
     expect(done).not.toHaveProperty('mediaHash');
 
     expect(tribe.analyze).toHaveBeenCalledWith(expect.stringContaining(UPLOAD_DIR), { soundOff: true });
-    const input = claude.reviewContent.mock.calls[0][0];
+    const input = ai.reviewContent.mock.calls[0][0];
     expect(input.kind).toBe('VIDEO');
     expect(input.images.map((i) => i.label)).toEqual(expect.arrayContaining(['Frame at 0.0s', 'Frame at 1.0s', 'Frame at 2.0s', 'Frame at 3.0s']));
     expect(input.images[0].mediaType).toBe('image/jpeg');
@@ -120,7 +120,7 @@ describe('Pre-flight check', () => {
     const done = await finished(alice, plain.body.id);
     expect(done).toMatchObject({ status: 'DONE', engine: 'AI_REVIEW' });
     expect(tribe.analyze).not.toHaveBeenCalled();
-    expect(claude.reviewContent.mock.calls[0][0].simulation).toBeNull();
+    expect(ai.reviewContent.mock.calls[0][0].simulation).toBeNull();
 
     tribe.configured = true;
     tribe.analyze.mockRejectedValueOnce(new Error('The audience simulation service did not respond.'));
@@ -130,16 +130,16 @@ describe('Pre-flight check', () => {
     expect(fallback.signals.simulationError).toContain('did not respond');
   });
 
-  it('reviews images, carousels and text posts with Claude only', async () => {
+  it('reviews images, carousels and text posts with the AI only', async () => {
     const single = await http().post('/preflight').set(auth(alice)).send({ mediaUrls: [image()], caption: 'New drop' }).expect(201);
     expect(single.body.kind).toBe('IMAGE');
     await finished(alice, single.body.id);
-    expect(claude.reviewContent.mock.calls[0][0].images).toHaveLength(1);
+    expect(ai.reviewContent.mock.calls[0][0].images).toHaveLength(1);
 
     const carousel = await http().post('/preflight').set(auth(alice)).send({ mediaUrls: [image(), image()] }).expect(201);
     expect(carousel.body.kind).toBe('CAROUSEL');
     await finished(alice, carousel.body.id);
-    expect(claude.reviewContent.mock.calls[1][0].images.map((i) => i.label)).toEqual(['Slide 1', 'Slide 2']);
+    expect(ai.reviewContent.mock.calls[1][0].images.map((i) => i.label)).toEqual(['Slide 1', 'Slide 2']);
 
     const text = await http().post('/preflight').set(auth(alice)).send({ text: 'Hot take: most morning routines are a waste of time.', platform: 'threads' }).expect(201);
     expect(text.body.kind).toBe('TEXT');
@@ -154,17 +154,17 @@ describe('Pre-flight check', () => {
     await http().post('/preflight').set(auth(alice)).send({ mediaUrls: ['http://localhost:3001/media/1-deadbeef.mp4'] }).expect(400);
     await http().post('/preflight').set(auth(alice)).send({ mediaUrls: 'nope' }).expect(400);
     await http().post('/preflight').set(auth(alice)).send({ mediaUrls: [video(), image()] }).expect(400);
-    expect(claude.reviewContent).not.toHaveBeenCalled();
+    expect(ai.reviewContent).not.toHaveBeenCalled();
   });
 
   it('needs the AI to be configured', async () => {
-    claude.configured = false;
+    ai.configured = false;
     await http().post('/preflight').set(auth(alice)).send({ text: 'hello' }).expect(503);
     expect((await http().get('/preflight/status').set(auth(alice)).expect(200)).body).toEqual({ ai: false, audienceSimulation: true });
   });
 
   it('records failures and retries them', async () => {
-    claude.reviewContent.mockRejectedValueOnce(new Error('The AI request failed. Try again.'));
+    ai.reviewContent.mockRejectedValueOnce(new Error('The AI request failed. Try again.'));
     const created = await http().post('/preflight').set(auth(alice)).send({ text: 'retry me' }).expect(201);
     const failed = await finished(alice, created.body.id);
     expect(failed).toMatchObject({ status: 'FAILED', error: 'The AI request failed. Try again.' });

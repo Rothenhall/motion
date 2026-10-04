@@ -45,9 +45,10 @@ ngrok http 3001
 ## AI ideas and hook library
 
 `/ideas` generates post ideas (hook, angle, format, caption, hashtags) from a brand profile, and `/hooks` is a
-hook library: 32 starter hooks, AI-written hooks for a topic, your own, and favorites. Both call Claude through
-the Anthropic SDK (`backend/src/ai/`). Set `ANTHROPIC_API_KEY` in `backend/.env`; `ANTHROPIC_MODEL` overrides
-the default `claude-opus-5-5`. Turning on autopilot in the brand profile adds fresh ideas every day at 7am.
+hook library: 32 starter hooks, AI-written hooks for a topic, your own, and favorites. Both call a model on
+[OpenRouter](https://openrouter.ai) with strict JSON-schema output (`backend/src/ai/`). Set `OPENROUTER_API_KEY`
+in `backend/.env`; `OPENROUTER_MODEL` overrides the default `z-ai/glm-5.3-flash` (pick a model that accepts images
+and supports structured outputs). Turning on autopilot in the brand profile adds fresh ideas every day at 7am.
 
 ## Pre-flight check
 
@@ -58,12 +59,13 @@ and three stronger openings you can save to the hook library. "Compare versions"
 well they open.
 
 - Every check runs as a background job (`backend/src/preflight/`). Videos are sampled with ffmpeg (every second
-  of the first 3, then spread to the end) plus scene cuts; Claude reviews the frames, caption, script, your brand
+  of the first 3, then spread to the end) plus scene cuts; the AI reviews the frames, caption, script, your brand
   profile and your own past post performance.
 - Reels can also go through the optional **audience simulation**: Meta's TRIBE v2 running on a GPU
   (`tribe-service/`). It adds a predicted attention curve with and without sound, likely drop-off moments and
-  a muted-autoplay check, which Claude turns into plain advice. Set `TRIBE_SERVICE_URL` and
-  `TRIBE_SERVICE_TOKEN` in `backend/.env`; without them the check uses Claude alone.
+  a muted-autoplay check, each flagged moment tagged with its likely cause; the AI turns that, plus frames grabbed
+  at those moments, into timestamped advice. Set `TRIBE_SERVICE_URL` and `TRIBE_SERVICE_TOKEN` in
+  `backend/.env`; without them the check uses the AI review alone.
 - All results are estimates and the UI says so. The TRIBE scores are not yet calibrated against real results.
   TRIBE v2 is CC BY-NC 4.0: internal R&D only, not for paying users without a license from Meta.
 

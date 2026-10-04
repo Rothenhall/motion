@@ -5,7 +5,7 @@ import { existsSync } from 'fs';
 import { join } from 'path';
 import { ContentCheck } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
-import { ClaudeService, PLATFORMS, PreflightReport, ReviewImage } from '../ai/claude.service';
+import { AiService, PLATFORMS, PreflightReport, ReviewImage } from '../ai/ai.service';
 import { UPLOAD_DIR } from '../media.controller';
 import { AudienceSimulation, TribeClient } from './tribe.client';
 import { extractFrames, frameTimes, hashFiles, imageForReview, probeVideo, sceneCuts, VideoFacts } from './media-probe';
@@ -33,10 +33,10 @@ export class PreflightService {
   private readonly log = new Logger(PreflightService.name);
   private draining = false;
 
-  constructor(private prisma: PrismaService, private claude: ClaudeService, private tribe: TribeClient) {}
+  constructor(private prisma: PrismaService, private ai: AiService, private tribe: TribeClient) {}
 
   status() {
-    return { ai: this.claude.configured, audienceSimulation: this.tribe.configured };
+    return { ai: this.ai.configured, audienceSimulation: this.tribe.configured };
   }
 
   // ---- create ----
@@ -62,7 +62,7 @@ export class PreflightService {
   }
 
   private async createMany(userId: string, inputs: CheckInput[], groupId: string | null) {
-    if (!this.claude.configured) throw new ServiceUnavailableException('Pre-flight checks need ANTHROPIC_API_KEY in backend/.env.');
+    if (!this.ai.configured) throw new ServiceUnavailableException('Pre-flight checks need OPENROUTER_API_KEY in backend/.env.');
     const rows = inputs.map((input) => this.validate(input));
     if (new Set(rows.map((r) => r.kind)).size > 1) throw new BadRequestException('Compare versions of the same kind of post (all videos, all images, or all text).');
     const queued = await this.prisma.contentCheck.count({ where: { userId, status: { in: ['PENDING', 'RUNNING'] } } });
@@ -188,7 +188,7 @@ export class PreflightService {
         }
         if (simulation) {
           signals.simulation = simulation;
-          // Show Claude what is on screen where the simulation flags something, so it can explain why.
+          // Show the AI what is on screen where the simulation flags something, so it can explain why.
           const extra = momentTimes(simulation, facts.durationSec, frames.map((f) => f.atSec));
           if (extra.length) frames.push(...(await extractFrames(video.path, extra).catch(() => [])));
           frames.sort((a, b) => a.atSec - b.atSec);
@@ -203,7 +203,7 @@ export class PreflightService {
       }
 
       const [brand, history] = await Promise.all([this.brand(check.userId), this.history(check.userId)]);
-      const report = await this.claude.reviewContent({
+      const report = await this.ai.reviewContent({
         kind: check.kind as Kind,
         platform: check.platform,
         caption: check.caption,
@@ -281,7 +281,7 @@ function reviewFacts(kind: Kind, video: (VideoFacts & { cuts: number[] }) | unde
   return facts;
 }
 
-/** Plain-language names for the simulated viewer responses, so Claude never sees (or repeats) brain jargon. */
+/** Plain-language names for the simulated viewer responses, so the AI never sees (or repeats) brain jargon. */
 const RESPONSE_NAMES: Record<string, string> = {
   attention_index: 'overall attention',
   faces: 'noticing people and faces',
@@ -315,7 +315,7 @@ export function momentTimes(sim: AudienceSimulation, durationSec: number, existi
   return out;
 }
 
-/** The part of the simulation Claude needs: scores, moments with what drives them, every response curve and a timed transcript. */
+/** The part of the simulation the AI needs: scores, moments with what drives them, every response curve and a timed transcript. */
 function simulationForReview(sim: AudienceSimulation) {
   const scores = Object.fromEntries(Object.entries(sim.scores).map(([k, v]) => [k, v ? { value: v.value, percentile: v.percentile } : null]));
   const transcript: string[] = [];

@@ -4,7 +4,7 @@ import { createReadStream, promises as fs } from 'fs';
 import { promisify } from 'util';
 
 const run = promisify(execFile);
-const MAX_CLAUDE_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_AI_IMAGE_BYTES = 5 * 1024 * 1024;
 
 export type VideoFacts = { durationSec: number; width: number | null; height: number | null; hasAudio: boolean };
 export type Frame = { atSec: number; jpegBase64: string };
@@ -50,7 +50,7 @@ export async function sceneCuts(path: string, maxSec = 180): Promise<number[]> {
   return [...stderr.toString().matchAll(/pts_time:([\d.]+)/g)].map((m) => Math.round(Number(m[1]) * 10) / 10);
 }
 
-/** A JPEG small enough for Claude's vision input. Falls back to the original file when ffmpeg is missing. */
+/** A JPEG small enough for the AI's vision input. Falls back to the original file when ffmpeg is missing. */
 export async function imageForReview(path: string, mime: string): Promise<{ mediaType: string; data: string }> {
   try {
     const { stdout } = await tool('ffmpeg', ['-v', 'error', '-i', path, '-frames:v', '1', '-vf', "scale='min(1568,iw)':-2", '-f', 'image2pipe', '-vcodec', 'mjpeg', '-q:v', '4', '-']);
@@ -59,7 +59,7 @@ export async function imageForReview(path: string, mime: string): Promise<{ medi
     if (!(error instanceof MissingToolError)) throw error;
   }
   const raw = await fs.readFile(path);
-  if (raw.length > MAX_CLAUDE_IMAGE_BYTES) throw new Error('This image is too large to review. Try one under 5 MB.');
+  if (raw.length > MAX_AI_IMAGE_BYTES) throw new Error('This image is too large to review. Try one under 5 MB.');
   return { mediaType: mime, data: raw.toString('base64') };
 }
 

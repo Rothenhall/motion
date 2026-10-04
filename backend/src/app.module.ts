@@ -19,7 +19,7 @@ import { UsersController } from './auth/users.controller';
 import { AuthGuard } from './auth/auth.guard';
 import { InsightsService } from './insights.service';
 import { AnalyticsController } from './analytics.controller';
-import { ClaudeService } from './ai/claude.service';
+import { AiService } from './ai/ai.service';
 import { IdeasService } from './ai/ideas.service';
 import { IdeasController } from './ai/ideas.controller';
 import { HooksService } from './ai/hooks.service';
@@ -31,6 +31,6 @@ import { TribeClient } from './preflight/tribe.client';
 @Module({
   imports: [ConfigModule.forRoot({ isGlobal: true }), ScheduleModule.forRoot()],
   controllers: [UsersController, AuthController, PostsController, AccountsController, AutomationsController, CommentsController, WebhooksController, DashboardController, MediaController, AnalyticsController, IdeasController, HooksController, PreflightController],
-  providers: [{ provide: APP_GUARD, useClass: AuthGuard }, PrismaService, SchedulerService, PublishersService, AutomationsService, MetaService, InsightsService, ClaudeService, IdeasService, HooksService, TribeClient, PreflightService],
+  providers: [{ provide: APP_GUARD, useClass: AuthGuard }, PrismaService, SchedulerService, PublishersService, AutomationsService, MetaService, InsightsService, AiService, IdeasService, HooksService, TribeClient, PreflightService],
 })
 export class AppModule {}

@@ -3,7 +3,7 @@
 Runs Meta FAIR's [TRIBE v2](https://github.com/facebookresearch/tribev2) on a reel and returns
 what Motion's pre-flight check needs: a per-second predicted attention curve, scores for the hook,
 hold, faces, clarity, emotional pull and sound-off viewing, and flagged moments with timestamps.
-No brain data leaves this service; the backend turns these numbers into plain advice with Claude.
+No brain data leaves this service; the backend turns these numbers into plain advice with its AI reviewer.
 
 > **License.** TRIBE v2 code and weights are CC BY-NC 4.0. This service is for internal R&D only.
 > Do not put it in front of paying users without a commercial license from Meta.
@@ -59,7 +59,7 @@ TRIBE_SERVICE_URL=http://gpu-box:8000
 TRIBE_SERVICE_TOKEN=some-long-secret
 ```
 
-Without `TRIBE_SERVICE_URL`, Motion's pre-flight check still works using Claude's review of the frames, caption and script.
+Without `TRIBE_SERVICE_URL`, Motion's pre-flight check still works using the AI review of the frames, caption and script.
 
 ### Reference library (optional, recommended)
 

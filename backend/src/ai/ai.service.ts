@@ -1,7 +1,11 @@
 import { BadGatewayException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
-import Anthropic from '@anthropic-ai/sdk';
-import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { z } from 'zod';
+
+const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
+const DEFAULT_MODEL = 'z-ai/glm-5.3-flash';
+const TIMEOUT_MS = 5 * 60 * 1000;
+
+type ContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } };
 
 export const PLATFORMS = ['instagram', 'facebook', 'threads'] as const;
 export const IDEA_FORMATS = ['REEL', 'CAROUSEL', 'IMAGE', 'THREAD', 'TEXT', 'STORY'] as const;
@@ -100,21 +104,14 @@ When an audience simulation is provided, it is a model's estimate of how an aver
 
 Alternative hooks: three openings for this exact post in the brand's voice. For video, the first spoken line or on-screen text; for images and text, the first line of the caption or post.`;
 
-/** Thin wrapper around the Anthropic SDK that returns schema-validated JSON for the AI features. */
+/** Calls a model on OpenRouter and returns schema-validated JSON for the AI features. */
 @Injectable()
-export class ClaudeService {
-  private readonly log = new Logger(ClaudeService.name);
-  private client: Anthropic | null = null;
-  readonly model = process.env.ANTHROPIC_MODEL || 'claude-opus-5-5';
+export class AiService {
+  private readonly log = new Logger(AiService.name);
+  readonly model = process.env.OPENROUTER_MODEL || DEFAULT_MODEL;
 
   get configured() {
-    return Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
-  }
-
-  private sdk() {
-    if (!this.configured) throw new ServiceUnavailableException('AI features need ANTHROPIC_API_KEY in backend/.env.');
-    this.client ??= new Anthropic();
-    return this.client;
+    return Boolean(process.env.OPENROUTER_API_KEY);
   }
 
   async generateIdeas(input: { brand: BrandContext; platforms: string[]; count: number; topic?: string; avoid: string[]; favoriteHooks: string[] }) {
@@ -126,7 +123,7 @@ export class ClaudeService {
       input.avoid.length ? `Recent ideas already on the list, so do not repeat them:\n${input.avoid.map((t) => `- ${t}`).join('\n')}` : '',
       `Give exactly ${input.count} distinct post ideas, mixing formats.`,
     ];
-    const out = await this.parse(lines.filter(Boolean).join('\n\n'), betaZodOutputFormat(IdeaSchema));
+    const out = await this.parse(lines.filter(Boolean).join('\n\n'), IdeaSchema, 'post_ideas');
     return out.ideas.slice(0, input.count);
   }
 
@@ -138,7 +135,7 @@ export class ClaudeService {
       input.category ? `Every hook must be in the ${input.category} category.` : `Spread them across these categories: ${HOOK_CATEGORIES.join(', ')}.`,
       'Each hook stands on its own and makes the reader need the next line. No hashtags, no emoji.',
     ];
-    const out = await this.parse(lines.filter(Boolean).join('\n\n'), betaZodOutputFormat(HookSchema));
+    const out = await this.parse(lines.filter(Boolean).join('\n\n'), HookSchema, 'hooks');
     return out.hooks.slice(0, input.count);
   }
 
@@ -157,12 +154,12 @@ export class ClaudeService {
       `Rate exactly these dimensions: ${dimensions.join(', ')}.`,
       input.images.length ? (input.kind === 'VIDEO' ? 'Frames from the video follow, each labelled with its timestamp.' : 'The images follow, in posting order.') : '',
     ];
-    const content: Anthropic.Beta.BetaContentBlockParam[] = [{ type: 'text', text: lines.filter(Boolean).join('\n\n') }];
+    const content: ContentPart[] = [{ type: 'text', text: lines.filter(Boolean).join('\n\n') }];
     for (const image of input.images) {
       content.push({ type: 'text', text: image.label });
-      content.push({ type: 'image', source: { type: 'base64', media_type: image.mediaType as 'image/jpeg', data: image.data } });
+      content.push({ type: 'image_url', image_url: { url: `data:${image.mediaType};base64,${image.data}` } });
     }
-    const report = await this.parse(content, betaZodOutputFormat(PreflightSchema), PREFLIGHT_SYSTEM);
+    const report = await this.parse(content, PreflightSchema, 'preflight_report', PREFLIGHT_SYSTEM);
     return {
       ...report,
       hook: { ...report.hook, score: Math.max(0, Math.min(100, Math.round(report.hook.score))) },
@@ -172,34 +169,61 @@ export class ClaudeService {
     };
   }
 
-  private async parse<T>(prompt: string | Anthropic.Beta.BetaContentBlockParam[], format: ReturnType<typeof betaZodOutputFormat<z.ZodType<T>>>, system = SYSTEM): Promise<T> {
-    try {
-      const response = await this.sdk().beta.messages.parse({
-        model: this.model,
-        max_tokens: 16000,
-        thinking: { type: 'adaptive' },
-        output_config: { effort: 'medium', format },
-        // On a safety decline, let the API retry on a suitable fallback model in the same call.
-        betas: ['server-side-fallback-2026-07-01'],
-        fallbacks: 'default',
-        system,
-        messages: [{ role: 'user', content: prompt }],
-      });
-      if (response.stop_reason === 'refusal') throw new BadGatewayException('The AI declined this request. Try rephrasing the topic.');
-      if (response.stop_reason === 'max_tokens') throw new BadGatewayException('The AI response was cut off. Ask for fewer items.');
-      if (!response.parsed_output) throw new BadGatewayException('The AI returned an unexpected response. Try again.');
-      return response.parsed_output as T;
-    } catch (error) {
-      if (error instanceof BadGatewayException || error instanceof ServiceUnavailableException) throw error;
-      if (error instanceof Anthropic.AuthenticationError) throw new ServiceUnavailableException('ANTHROPIC_API_KEY was rejected. Check backend/.env.');
-      if (error instanceof Anthropic.RateLimitError) throw new ServiceUnavailableException('The AI is busy right now. Try again in a minute.');
-      if (error instanceof Anthropic.APIError) {
-        this.log.error(`Claude API error ${error.status}: ${error.message}`);
-        throw new BadGatewayException('The AI request failed. Try again.');
-      }
-      throw error;
+  /** One chat completion with a strict JSON schema, validated with zod. Retries once when the model returns invalid JSON. */
+  private async parse<T>(prompt: string | ContentPart[], schema: z.ZodType<T>, name: string, system = SYSTEM): Promise<T> {
+    if (!this.configured) throw new ServiceUnavailableException('AI features need OPENROUTER_API_KEY in backend/.env.');
+    const { $schema: _, ...jsonSchema } = z.toJSONSchema(schema) as Record<string, unknown>;
+    const body = {
+      model: this.model,
+      max_tokens: 16000,
+      messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }],
+      response_format: { type: 'json_schema', json_schema: { name, strict: true, schema: jsonSchema } },
+      // Only route to providers that honour the JSON schema.
+      provider: { require_parameters: true },
+    };
+    for (let attempt = 1; ; attempt++) {
+      const text = await this.complete(body);
+      const parsed = schema.safeParse(parseJson(text));
+      if (parsed.success) return parsed.data;
+      this.log.warn(`AI returned JSON that does not match ${name} (attempt ${attempt}): ${parsed.error.message.slice(0, 300)}`);
+      if (attempt >= 2) throw new BadGatewayException('The AI returned an unexpected response. Try again.');
     }
   }
+
+  private async complete(body: Record<string, unknown>): Promise<string> {
+    let res: Response;
+    try {
+      res = await fetch(OPENROUTER_URL, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`, 'Content-Type': 'application/json', 'X-Title': 'Motion' },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      });
+    } catch (error) {
+      this.log.error(`OpenRouter request failed: ${error instanceof Error ? error.message : error}`);
+      throw new BadGatewayException('The AI request failed. Try again.');
+    }
+    const data: any = await res.json().catch(() => null);
+    if (res.status === 401 || res.status === 403) throw new ServiceUnavailableException('OPENROUTER_API_KEY was rejected. Check backend/.env.');
+    if (res.status === 402) throw new ServiceUnavailableException('The OpenRouter account is out of credits.');
+    if (res.status === 429) throw new ServiceUnavailableException('The AI is busy right now. Try again in a minute.');
+    if (!res.ok || data?.error) {
+      this.log.error(`OpenRouter error ${res.status}: ${data?.error?.message ?? 'no details'}`);
+      throw new BadGatewayException('The AI request failed. Try again.');
+    }
+    const choice = data?.choices?.[0];
+    if (choice?.finish_reason === 'length') throw new BadGatewayException('The AI response was cut off. Ask for fewer items.');
+    if (choice?.message?.refusal) throw new BadGatewayException('The AI declined this request. Try rephrasing the topic.');
+    const content = choice?.message?.content;
+    if (typeof content !== 'string' || !content.trim()) throw new BadGatewayException('The AI returned an empty response. Try again.');
+    return content;
+  }
+}
+
+/** JSON from a model reply, tolerating a ```json fence around it. */
+function parseJson(text: string): unknown {
+  const unfenced = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+  try { return JSON.parse(unfenced); } catch { return undefined; }
 }
 
 function brandBlock(brand: BrandContext) {
