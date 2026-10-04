@@ -4,6 +4,7 @@ import axios from 'axios';
 import type { SocialAccount } from '@prisma/client';
 import { PrismaService } from './prisma.service';
 import { MetaService } from './meta.service';
+import { decryptToken } from './auth/crypto';
 
 const DAY = 86_400_000;
 const BACKFILL_DAYS = 30;
@@ -73,7 +74,9 @@ export class InsightsService {
     return this.running !== null;
   }
 
-  async syncAccount(account: SocialAccount) {
+  async syncAccount(stored: SocialAccount) {
+    // Tokens are stored encrypted; everything below talks to Meta with the plaintext one.
+    const account = { ...stored, accessToken: decryptToken(stored.accessToken) };
     const errors: string[] = [];
     const step = async (label: string, fn: () => Promise<unknown>) => {
       try {

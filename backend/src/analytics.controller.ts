@@ -1,6 +1,7 @@
 import { Controller, Get, HttpCode, Post, Query } from '@nestjs/common';
 import { PrismaService } from './prisma.service';
 import { InsightsService } from './insights.service';
+import { AuthUser, CurrentUser } from './auth/auth.guard';
 
 const DAY = 86_400_000;
 const RANGES = [7, 30, 90];
@@ -13,7 +14,8 @@ export class AnalyticsController {
   constructor(private prisma: PrismaService, private insights: InsightsService) {}
 
   @Get()
-  async summary(@Query('days') daysParam?: string) {
+  async summary(@CurrentUser() user: AuthUser, @Query('days') daysParam?: string) {
+    const owned = { account: { userId: user.id } };
     const days = RANGES.includes(Number(daysParam)) ? Number(daysParam) : 30;
     const now = new Date();
     const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
@@ -23,23 +25,24 @@ export class AnalyticsController {
 
     const [accounts, rows, followerRows, published, prevPublished, topPosts] = await Promise.all([
       this.prisma.socialAccount.findMany({
+        where: { userId: user.id },
         orderBy: { createdAt: 'asc' },
         select: { id: true, provider: true, name: true, insightsSyncedAt: true, insightsError: true },
       }),
       this.prisma.accountInsight.findMany({
-        where: { metric: { in: ['views', 'reach', 'engagements'] }, date: { gte: new Date(prevSince), lt: new Date(today) } },
+        where: { ...owned, metric: { in: ['views', 'reach', 'engagements'] }, date: { gte: new Date(prevSince), lt: new Date(today) } },
         select: { accountId: true, date: true, metric: true, value: true },
       }),
       this.prisma.accountInsight.findMany({
-        where: { metric: 'followers' },
+        where: { ...owned, metric: 'followers' },
         orderBy: { date: 'desc' },
         distinct: ['accountId'],
         select: { accountId: true, value: true },
       }),
-      this.prisma.scheduledPost.count({ where: { status: 'PUBLISHED', scheduledAt: { gte: new Date(since), lt: now } } }),
-      this.prisma.scheduledPost.count({ where: { status: 'PUBLISHED', scheduledAt: { gte: new Date(prevSince), lt: new Date(since) } } }),
+      this.prisma.scheduledPost.count({ where: { ...owned, status: 'PUBLISHED', scheduledAt: { gte: new Date(since), lt: now } } }),
+      this.prisma.scheduledPost.count({ where: { ...owned, status: 'PUBLISHED', scheduledAt: { gte: new Date(prevSince), lt: new Date(since) } } }),
       this.prisma.postInsight.findMany({
-        where: { post: { scheduledAt: { gte: new Date(since) } } },
+        where: { ...owned, post: { scheduledAt: { gte: new Date(since) } } },
         orderBy: [{ engagements: 'desc' }, { views: 'desc' }],
         take: 5,
         include: { post: { select: { platform: true, caption: true, mediaType: true, permalink: true, scheduledAt: true } } },
