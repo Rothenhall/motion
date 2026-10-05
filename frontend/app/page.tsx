@@ -176,7 +176,7 @@ export default function Home() {
             <div className="form-row">
               <div className="field">
                 <label className="field-label" htmlFor="account">Publish from</label>
-                <select id="account" value={form.accountId} onChange={(event) => setForm({ ...form, accountId: event.target.value })} required>
+                <select id="account" value={form.accountId} onChange={(event) => { const account = data.accounts.find((a) => a.id === event.target.value); setForm({ ...form, accountId: event.target.value, platform: account ? platformFor(account.provider) : form.platform }); }} required>
                   <option value="">Select a connected account</option>
                   {data.accounts.map((account) => <option key={account.id} value={account.id}>{account.name || account.externalId} · {platformName(platformFor(account.provider))}</option>)}
                 </select>

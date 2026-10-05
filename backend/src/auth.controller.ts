@@ -4,13 +4,16 @@ import { MetaService } from './meta.service';
 import { InsightsService } from './insights.service';
 import { AuthUser, CurrentUser, Public } from './auth/auth.guard';
 import { signToken, verifyToken } from './auth/crypto';
+import { graphVersion } from './meta-config';
 
 const OAUTH_STATE_TTL = 10 * 60;
 const EXPIRED = 'This connection link expired or was not started from Motion. Please try connecting again.';
 
+// pages_manage_engagement: reply to comments as the Page.
+// pages_manage_metadata: subscribe the Page to webhooks (subscribed_apps).
 const FB_SCOPES = [
-  'pages_show_list','pages_read_engagement','pages_manage_posts',
-  'pages_messaging','pages_read_user_content','read_insights',
+  'pages_show_list','pages_read_engagement','pages_manage_posts','pages_manage_engagement',
+  'pages_manage_metadata','pages_messaging','pages_read_user_content','read_insights',
 ].join(',');
 
 // Business Login for Instagram — IG only, no Facebook required for the end user.
@@ -46,7 +49,25 @@ export class AuthController {
   start(@CurrentUser() user: AuthUser, @Param('provider') provider: string) {
     if (!['facebook', 'instagram', 'threads'].includes(provider)) throw new BadRequestException('Choose Facebook, Instagram or Threads.');
     const state = signToken(user.id, 'oauth_state', OAUTH_STATE_TTL, { provider });
-    const v = process.env.META_GRAPH_VERSION || 'v22.0';
+    const v = graphVersion();
+    if (provider === 'threads') {
+      // Threads OAuth runs on threads.net with the Threads app ID, not the Facebook dialog.
+      let clientId: string;
+      try {
+        clientId = this.meta.threadsApp().id;
+      } catch (e) {
+        throw new BadRequestException(this.meta.msg(e));
+      }
+      return {
+        url:
+          `https://threads.net/oauth/authorize` +
+          `?client_id=${clientId}` +
+          `&redirect_uri=${encodeURIComponent(this.redirectFor('threads'))}` +
+          `&scope=${encodeURIComponent(THREADS_SCOPES)}` +
+          `&response_type=code` +
+          `&state=${encodeURIComponent(state)}`,
+      };
+    }
     if (provider === 'instagram') {
       // Business Login for Instagram. Instagram App ID from Dashboard > Instagram > API setup with Instagram login.
       // Falls back to META_APP_ID for dev.
@@ -66,7 +87,7 @@ export class AuthController {
         `https://www.facebook.com/${v}/dialog/oauth` +
         `?client_id=${process.env.META_APP_ID}` +
         `&redirect_uri=${encodeURIComponent(this.redirectFor(provider))}` +
-        `&scope=${encodeURIComponent(provider === 'threads' ? THREADS_SCOPES : FB_SCOPES)}` +
+        `&scope=${encodeURIComponent(FB_SCOPES)}` +
         `&response_type=code` +
         `&state=${encodeURIComponent(state)}`,
     };
@@ -143,11 +164,25 @@ export class AuthController {
       }));
       return r.data; // { access_token, user_id, permissions }
     }
-    // facebook_page + threads: standard Graph code exchange
-    const v = process.env.META_GRAPH_VERSION || 'v22.0';
-    const redirect = this.redirectFor(b.provider === 'threads' ? 'threads' : 'facebook');
-    const r = await axios.get(`https://graph.facebook.com/${v}/oauth/access_token`, {
-      params: { client_id: process.env.META_APP_ID, client_secret: process.env.META_APP_SECRET, redirect_uri: redirect, code: b.code },
+    if (b.provider === 'threads') {
+      let app: { id: string; secret: string };
+      try {
+        app = this.meta.threadsApp();
+      } catch (e) {
+        throw new BadRequestException(this.meta.msg(e));
+      }
+      const r = await axios.post('https://graph.threads.net/oauth/access_token', new URLSearchParams({
+        client_id: app.id,
+        client_secret: app.secret,
+        grant_type: 'authorization_code',
+        redirect_uri: this.redirectFor('threads'),
+        code: b.code,
+      }));
+      return r.data; // { access_token, user_id }
+    }
+    // facebook_page: standard Graph code exchange
+    const r = await axios.get(`https://graph.facebook.com/${graphVersion()}/oauth/access_token`, {
+      params: { client_id: process.env.META_APP_ID, client_secret: process.env.META_APP_SECRET, redirect_uri: this.redirectFor('facebook'), code: b.code },
     });
     return r.data;
   }
