@@ -19,7 +19,7 @@ const MAX_IMAGES = 10;
 const MAX_VARIANTS = 3;
 // TRIBE cost grows with length; reels are rarely longer than this.
 const MAX_SIMULATION_SEC = 180;
-const STUCK_AFTER_MS = 30 * 60 * 1000;
+const STUCK_AFTER_MS = 45 * 60 * 1000; // longer than the 30-minute audience simulation timeout
 const MAX_ATTEMPTS = 2;
 const UPLOAD_NAME = /^\d+-[0-9a-f]{8}\.([a-z0-9]+)$/;
 const MIME: Record<string, string> = { mp4: 'video/mp4', mov: 'video/quicktime', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif' };
@@ -180,6 +180,7 @@ export class PreflightService {
         const cuts = await sceneCuts(video.path).catch(() => []);
         const frames = await extractFrames(video.path, frameTimes(facts.durationSec));
         if (this.tribe.configured) {
+          await this.setStage(id, 'SIMULATING');
           if (facts.durationSec > MAX_SIMULATION_SEC) signals.simulationError = 'Audience simulation runs on videos up to 3 minutes.';
           else {
             try { simulation = await this.tribe.analyze(video.path, { soundOff: facts.hasAudio }); }
@@ -202,6 +203,7 @@ export class PreflightService {
         }
       }
 
+      await this.setStage(id, 'WRITING');
       const [brand, history] = await Promise.all([this.brand(check.userId), this.history(check.userId)]);
       const report = await this.ai.reviewContent({
         kind: check.kind as Kind,
@@ -232,6 +234,11 @@ export class PreflightService {
       this.log.warn(`Pre-flight check ${id} failed: ${message}`);
       await this.prisma.contentCheck.update({ where: { id }, data: { status: 'FAILED', error: message.slice(0, 500), completedAt: new Date() } });
     }
+  }
+
+  /** Progress shown while a check runs; signals is replaced with the real results when it finishes. */
+  private async setStage(id: string, stage: 'SIMULATING' | 'WRITING') {
+    await this.prisma.contentCheck.update({ where: { id }, data: { signals: JSON.stringify({ stage }) } }).catch(() => undefined);
   }
 
   private async brand(userId: string) {
@@ -347,7 +354,7 @@ function simulationForReview(sim: AudienceSimulation) {
   };
 }
 
-type Signals = { video?: VideoFacts & { cuts: number[]; frameTimes: number[] }; simulation?: AudienceSimulation; simulationError?: string };
+type Signals = { stage?: string; video?: VideoFacts & { cuts: number[]; frameTimes: number[] }; simulation?: AudienceSimulation; simulationError?: string };
 
 function serialize(check: ContentCheck) {
   const { mediaHash, attempts, ...rest } = check;

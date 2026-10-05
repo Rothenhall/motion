@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
+import { createContext, FormEvent, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Icon } from '../../components/Icons';
 import { API, api, authHeaders } from '../../lib/api';
 
@@ -25,10 +25,11 @@ type Simulation = {
 type Check = {
   id: string; groupId: string | null; label: string | null; kind: 'VIDEO' | 'IMAGE' | 'CAROUSEL' | 'TEXT'; platform: string;
   caption: string | null; text: string | null; mediaUrls: string[]; status: 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED';
-  engine: string | null; error: string | null; createdAt: string;
-  signals?: { video?: { durationSec: number }; simulation?: Simulation; simulationError?: string } | null;
+  engine: string | null; error: string | null; createdAt: string; startedAt: string | null;
+  signals?: { stage?: 'SIMULATING' | 'WRITING'; video?: { durationSec: number }; simulation?: Simulation; simulationError?: string } | null;
   report?: Report | null;
   verdict?: string | null;
+  hook?: { rating: Rating; score: number } | null;
 };
 type Group = { groupId: string; done: boolean; rankedBy: string; ranking: { id: string; label: string | null; score: number }[] | null; checks: Check[] };
 type Draft = { mediaUrls: string[]; text: string };
@@ -39,12 +40,17 @@ const DIMENSION_LABELS: Record<string, string> = { HOOK: 'Hook', CLARITY: 'Clari
 const BASIS_LABELS: Record<string, string> = { AUDIENCE_SIMULATION: 'Audience simulation', VISUAL_REVIEW: 'Visual review', COPY_REVIEW: 'Copy review', YOUR_HISTORY: 'Your past posts' };
 const RATING_LABELS: Record<Rating, string> = { WEAK: 'Weak', OK: 'OK', STRONG: 'Strong' };
 const KIND_LABELS: Record<string, string> = { VIDEO: 'Reel', IMAGE: 'Image', CAROUSEL: 'Carousel', TEXT: 'Text post' };
+/** Whether the backend has the audience simulation (TRIBE) configured. */
+const SimulationOn = createContext(false);
 const emptyDraft = (): Draft => ({ mediaUrls: [], text: '' });
 
 const isVideo = (url: string) => /\.(mp4|mov)(\?|$)/i.test(url);
 const clock = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
 const span = (i: Insight) => i.startSec == null ? null : i.endSec != null && i.endSec > i.startSec ? `${clock(i.startSec)}–${clock(i.endSec)}` : clock(i.startSec);
 const busy = (c: Check) => c.status === 'PENDING' || c.status === 'RUNNING';
+const SEVERITY_ORDER = { HIGH: 0, MEDIUM: 1, LOW: 2 } as const;
+const fixList = (r: Report) => r.insights.filter((i) => i.severity !== 'LOW').sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
+const fixesAsText = (r: Report) => fixList(r).map((i, n) => `${n + 1}. ${span(i) ? `[${span(i)}] ` : ''}${i.title}: ${i.fix}`).join('\n');
 
 async function uploadFiles(files: FileList): Promise<string[]> {
   const urls: string[] = [];
@@ -164,7 +170,7 @@ export default function Preflight() {
 
   const ready = drafts.every((d) => d.mediaUrls.length || d.text.trim()) || (mode === 'single' && caption.trim());
 
-  return <div>
+  return <SimulationOn.Provider value={status.audienceSimulation}><div>
     <section className="page-intro">
       <div><div className="eyebrow">Before you post</div><h2>Pre-flight check</h2><p>Upload a reel, image or post and see how people will likely react, with fixes you can make before it goes live.</p></div>
       <div className="page-intro-actions">
@@ -220,7 +226,7 @@ export default function Preflight() {
             {history.map((c) => <div className={`pf-history-item ${selected?.id === c.id || selected?.id === c.groupId ? 'active' : ''}`} key={c.id}>
               <button type="button" className="pf-history-open" onClick={() => setSelected(c.groupId ? { type: 'group', id: c.groupId } : { type: 'check', id: c.id })}>
                 <strong>{c.verdict || (busy(c) ? 'Checking…' : c.status === 'FAILED' ? 'Check failed' : 'Untitled check')}</strong>
-                <span>{c.label ? `${c.label} · ` : ''}{KIND_LABELS[c.kind]} · {new Date(c.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
+                <span>{c.label ? `${c.label} · ` : ''}{KIND_LABELS[c.kind]}{c.hook ? ` · Hook ${c.hook.score}/100` : ''} · {new Date(c.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
               </button>
               <button className="icon-btn" type="button" aria-label="Delete check" onClick={() => remove(c.id)}><Icon name="trash" size={13} /></button>
             </div>)}
@@ -235,7 +241,7 @@ export default function Preflight() {
         {check && <CheckView check={check} onRetry={retry} onSaveHook={saveHook} />}
       </section>
     </div>
-  </div>;
+  </div></SimulationOn.Provider>;
 }
 
 function GroupView({ group, onRetry, onSaveHook }: { group: Group; onRetry: (id: string) => void; onSaveHook: (t: string) => void }) {
@@ -261,15 +267,12 @@ function GroupView({ group, onRetry, onSaveHook }: { group: Group; onRetry: (id:
 function CheckView({ check, onRetry, onSaveHook, nested }: { check: Check; onRetry: (id: string) => void; onSaveHook: (t: string) => void; nested?: boolean }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [now, setNow] = useState(0);
+  const [copied, setCopied] = useState(false);
   const sim = check.signals?.simulation;
   const seek = (sec: number) => { const v = videoRef.current; if (v) { v.currentTime = sec; v.play().catch(() => { /* autoplay blocked */ }); } };
   const Title = nested ? 'h4' : 'h3';
 
-  if (busy(check)) return <div className="pf-body">
-    <Title className="card-title" id={nested ? undefined : 'pf-result-title'}>{check.label ? `${check.label}: checking…` : 'Checking your post…'}</Title>
-    <p className="card-subtitle">{check.kind === 'VIDEO' ? 'Reading the frames, cuts and sound. With the audience simulation on, reels can take a few minutes.' : 'This usually takes under a minute.'}</p>
-    <div className="skeleton" style={{ height: 160, marginTop: 16 }} />
-  </div>;
+  if (busy(check)) return <Progress check={check} Title={Title} nested={nested} />;
 
   if (check.status === 'FAILED' || !check.report) return <div className="pf-body">
     <Title className="card-title" id={nested ? undefined : 'pf-result-title'}>This check failed</Title>
@@ -278,6 +281,11 @@ function CheckView({ check, onRetry, onSaveHook, nested }: { check: Check; onRet
   </div>;
 
   const r = check.report;
+  const fixes = fixList(r);
+  const keeps = r.insights.filter((i) => i.severity === 'LOW');
+  const copyFixes = () => {
+    navigator.clipboard?.writeText(fixesAsText(r)).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); }).catch(() => { /* clipboard blocked */ });
+  };
   return <div className="pf-body">
     <div className="idea-meta">
       {check.label && <span className="tag">{check.label}</span>}
@@ -289,7 +297,7 @@ function CheckView({ check, onRetry, onSaveHook, nested }: { check: Check; onRet
     <Title className="pf-verdict" id={nested ? undefined : 'pf-result-title'}>{r.verdict}</Title>
 
     <div className="pf-scores">
-      <div className={`pf-score pf-${r.hook.rating.toLowerCase()}`}><span>Hook</span><strong>{RATING_LABELS[r.hook.rating]}</strong><small>{r.hook.reason}</small></div>
+      <div className={`pf-score pf-${r.hook.rating.toLowerCase()}`}><span>Hook</span><strong>{RATING_LABELS[r.hook.rating]} <em className="pf-score-num">{Math.round(r.hook.score)}/100</em></strong><small>{r.hook.reason}</small></div>
       {r.dimensions.filter((d) => d.key !== 'HOOK').map((d) => <div className={`pf-score pf-${d.rating.toLowerCase()}`} key={d.key}><span>{DIMENSION_LABELS[d.key] || d.key}</span><strong>{RATING_LABELS[d.rating]}</strong><small>{d.note}</small></div>)}
     </div>
 
@@ -298,18 +306,17 @@ function CheckView({ check, onRetry, onSaveHook, nested }: { check: Check; onRet
     {sim && <AttentionChart sim={sim} now={now} onSeek={seek} />}
     {check.signals?.simulationError && <p className="form-hint">Audience simulation unavailable for this check ({check.signals.simulationError}). Insights come from the AI review.</p>}
 
-    <h4 className="pf-section">What to fix</h4>
-    <ul className="pf-insights">
-      {r.insights.map((i, n) => <li className={`pf-insight sev-${i.severity.toLowerCase()}`} key={n}>
-        <div className="pf-insight-head">
-          <strong>{i.title}</strong>
-          {span(i) && (check.kind === 'VIDEO' ? <button type="button" className="pf-time" onClick={() => seek(i.startSec!)} aria-label={`Play from ${clock(i.startSec!)}`}><Icon name="play" size={11} /> {span(i)}</button> : <span className="pf-time">{span(i)}</span>)}
-          <span className="tag tag-muted">{BASIS_LABELS[i.basis] || i.basis}</span>
-        </div>
-        <p>{i.detail}</p>
-        <p className="pf-fix"><strong>Fix:</strong> {i.fix}</p>
-      </li>)}
-    </ul>
+    {fixes.length > 0 && <>
+      <div className="pf-section-row">
+        <h4 className="pf-section">Fix before posting <span className="list-count">{fixes.length}</span></h4>
+        <button className="btn btn-ghost btn-sm" type="button" onClick={copyFixes}><Icon name={copied ? 'check' : 'copy'} size={13} /> {copied ? 'Copied' : 'Copy fix list'}</button>
+      </div>
+      <ul className="pf-insights">{fixes.map((i, n) => <InsightItem key={n} insight={i} video={check.kind === 'VIDEO'} onSeek={seek} />)}</ul>
+    </>}
+    {keeps.length > 0 && <>
+      <h4 className="pf-section">Already working</h4>
+      <ul className="pf-insights">{keeps.map((i, n) => <InsightItem key={n} insight={i} video={check.kind === 'VIDEO'} onSeek={seek} />)}</ul>
+    </>}
 
     {r.alternativeHooks.length > 0 && <>
       <h4 className="pf-section">Stronger openings to try</h4>
@@ -320,6 +327,48 @@ function CheckView({ check, onRetry, onSaveHook, nested }: { check: Check; onRet
     </>}
 
     <p className="form-hint pf-disclaimer">These are predictions, not guarantees. {check.engine === 'AUDIENCE_SIMULATION' ? 'The attention curve comes from a research model of how an average viewer processes video; it has not yet been checked against your real results.' : 'They come from an AI review of your post and your past performance.'}</p>
+  </div>;
+}
+
+function InsightItem({ insight: i, video, onSeek }: { insight: Insight; video: boolean; onSeek: (s: number) => void }) {
+  return <li className={`pf-insight sev-${i.severity.toLowerCase()}`}>
+    <div className="pf-insight-head">
+      {i.severity !== 'LOW' && <span className={`pf-sev pf-sev-${i.severity.toLowerCase()}`}>{i.severity === 'HIGH' ? 'Fix first' : 'Worth fixing'}</span>}
+      <strong>{i.title}</strong>
+      {span(i) && (video ? <button type="button" className="pf-time" onClick={() => onSeek(i.startSec!)} aria-label={`Play from ${clock(i.startSec!)}`}><Icon name="play" size={11} /> {span(i)}</button> : <span className="pf-time">{span(i)}</span>)}
+      <span className="tag tag-muted">{BASIS_LABELS[i.basis] || i.basis}</span>
+    </div>
+    <p>{i.detail}</p>
+    <p className="pf-fix"><strong>{i.severity === 'LOW' ? 'Tip:' : 'Fix:'}</strong> {i.fix}</p>
+  </li>;
+}
+
+/** Reel checks with the audience simulation take 10–16 minutes, so show where the check is and that it is safe to leave. */
+function Progress({ check, Title, nested }: { check: Check; Title: 'h3' | 'h4'; nested?: boolean }) {
+  const [tick, setTick] = useState(Date.now());
+  useEffect(() => { const t = setInterval(() => setTick(Date.now()), 1000); return () => clearInterval(t); }, []);
+  const stage = check.status === 'PENDING' ? 'QUEUED' : check.signals?.stage === 'WRITING' ? 'WRITING' : check.signals?.stage === 'SIMULATING' ? 'SIMULATING' : 'READING';
+  const simulated = useContext(SimulationOn) && check.kind === 'VIDEO';
+  const steps = [
+    { key: 'QUEUED', label: 'Queued' },
+    { key: 'READING', label: check.kind === 'VIDEO' ? 'Reading frames, cuts and sound' : 'Reading your post' },
+    ...(simulated ? [{ key: 'SIMULATING', label: 'Simulating how viewers react, second by second' }] : []),
+    { key: 'WRITING', label: 'Writing your insights and fixes' },
+  ];
+  const at = Math.max(0, steps.findIndex((s) => s.key === stage));
+  const since = check.startedAt ? Math.max(0, Math.floor((tick - new Date(check.startedAt).getTime()) / 1000)) : null;
+  return <div className="pf-body">
+    <Title className="card-title" id={nested ? undefined : 'pf-result-title'}>{check.label ? `${check.label}: checking…` : 'Checking your post…'}</Title>
+    <p className="card-subtitle">{check.kind === 'VIDEO' && simulated
+      ? 'Reels usually take 10 to 15 minutes, mostly for the audience simulation. You can leave this page; the result will be in Recent checks.'
+      : 'This usually takes under a minute.'}</p>
+    <ol className="pf-steps" aria-label="Progress">
+      {steps.map((s, i) => <li key={s.key} className={i < at ? 'done' : i === at ? 'active' : ''} aria-current={i === at ? 'step' : undefined}>
+        <span className="pf-step-dot" aria-hidden="true">{i < at ? <Icon name="check" size={11} /> : null}</span>
+        <span>{s.label}</span>
+        {i === at && since != null && <span className="pf-step-time">{clock(since)}</span>}
+      </li>)}
+    </ol>
   </div>;
 }
 

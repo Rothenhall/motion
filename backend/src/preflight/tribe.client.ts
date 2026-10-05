@@ -28,8 +28,9 @@ export type AudienceSimulation = {
   version: string;
 };
 
-// Two TRIBE passes (with and without sound) can take several minutes on one GPU.
-const TIMEOUT_MS = 20 * 60 * 1000;
+// Two TRIBE passes (with and without sound) took ~16 minutes for a fresh 28 s reel on Modal; the
+// Modal function itself stops at 30 minutes.
+const TIMEOUT_MS = 30 * 60 * 1000;
 
 /** Client for the optional GPU service that runs TRIBE v2. Unset TRIBE_SERVICE_URL = feature runs on the AI review alone. */
 @Injectable()
