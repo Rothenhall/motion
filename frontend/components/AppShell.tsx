@@ -6,6 +6,16 @@ import { useCallback, useEffect, useState } from 'react';
 import { Icon } from './Icons';
 import CommandPalette from './CommandPalette';
 import { api, getToken, signOut } from '../lib/api';
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 const primaryLinks = [
   { href: '/', label: 'Overview', icon: 'grid' as const },
@@ -13,8 +23,8 @@ const primaryLinks = [
   { href: '/ideas', label: 'Ideas', icon: 'bulb' as const },
   { href: '/hooks', label: 'Hook library', icon: 'sparkles' as const },
   { href: '/preflight', label: 'Pre-flight check', icon: 'gauge' as const },
-  { href: '/automations', label: 'Automations', icon: 'zap' as const, badge: '3' },
-  { href: '/comments', label: 'Inbox', icon: 'inbox' as const, badge: '12' },
+  { href: '/automations', label: 'Automations', icon: 'zap' as const },
+  { href: '/comments', label: 'Inbox', icon: 'inbox' as const },
 ];
 
 const manageLinks = [
@@ -24,21 +34,82 @@ const manageLinks = [
 
 const titles: Record<string, { eyebrow: string; title: string }> = {
   '/': { eyebrow: 'Workspace', title: 'Overview' },
-  '/planner': { eyebrow: 'Workspace', title: 'Content planner' },
-  '/ideas': { eyebrow: 'Create', title: 'Content ideas' },
+  '/planner': { eyebrow: 'Workspace', title: 'Planner' },
+  '/ideas': { eyebrow: 'Create', title: 'Ideas' },
   '/hooks': { eyebrow: 'Create', title: 'Hook library' },
   '/preflight': { eyebrow: 'Create', title: 'Pre-flight check' },
   '/automations': { eyebrow: 'Engagement', title: 'Automations' },
   '/comments': { eyebrow: 'Engagement', title: 'Inbox' },
-  '/connect': { eyebrow: 'Workspace', title: 'Connections' },
-  '/analytics': { eyebrow: 'Workspace', title: 'Analytics' },
+  '/connect': { eyebrow: 'Manage', title: 'Connections' },
+  '/analytics': { eyebrow: 'Manage', title: 'Analytics' },
 };
 
 function initialTheme(): boolean {
   if (typeof window === 'undefined') return false;
-  const stored = window.localStorage.getItem('motion-theme');
-  if (stored) return stored === 'dark';
-  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
+  return document.documentElement.dataset.theme === 'dark';
+}
+
+function SidebarContent({ isCurrent, onNavigate }: { isCurrent: (href: string) => boolean; onNavigate?: () => void }) {
+  const renderLink = (link: { href: string; label: string; icon: Parameters<typeof Icon>[0]['name'] }) => (
+    <Link
+      className={`nav-item ${isCurrent(link.href) ? 'active' : ''}`}
+      href={link.href}
+      key={link.href}
+      aria-current={isCurrent(link.href) ? 'page' : undefined}
+      onClick={onNavigate}
+    >
+      <Icon name={link.icon} size={18} />
+      <span>{link.label}</span>
+    </Link>
+  );
+  return (
+    <>
+      <div className="brand-row">
+        <div className="brand-mark" aria-hidden="true"><span /></div>
+        <span className="brand-name">motion</span>
+        <span className="brand-beta">BETA</span>
+      </div>
+      <nav className="sidebar-nav" aria-label="Main navigation">
+        <div className="nav-label">Workspace</div>
+        {primaryLinks.map(renderLink)}
+        <div className="nav-label nav-label-manage">Manage</div>
+        {manageLinks.map(renderLink)}
+      </nav>
+    </>
+  );
+}
+
+function AccountMenu({ email, dark, onToggleTheme, variant }: { email: string | null; dark: boolean; onToggleTheme: () => void; variant: 'sidebar' | 'topbar' }) {
+  const initial = email ? email.charAt(0).toUpperCase() : '';
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        {variant === 'sidebar' ? (
+          <button className="user-row" type="button" aria-label="Account menu">
+            <div className={`user-avatar ${email ? '' : 'skeleton'}`} aria-hidden="true">{initial}</div>
+            <div className="user-copy"><strong>Signed in</strong><small>{email || 'Loading…'}</small></div>
+            <Icon name="more" size={17} />
+          </button>
+        ) : (
+          <button className={`topbar-avatar ${email ? '' : 'skeleton'}`} type="button" aria-label="Account menu">{initial}</button>
+        )}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align={variant === 'sidebar' ? 'start' : 'end'} side={variant === 'sidebar' ? 'top' : 'bottom'} className="min-w-56">
+        <DropdownMenuLabel className="truncate font-normal text-muted-foreground">{email}</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={onToggleTheme}>
+          <Icon name={dark ? 'sun' : 'moon'} size={15} /> {dark ? 'Light mode' : 'Dark mode'}
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href="/connect"><Icon name="link" size={15} /> Connections</Link>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem variant="destructive" onSelect={signOut}>
+          <Icon name="arrow-right" size={15} /> Sign out
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 }
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
@@ -47,7 +118,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [navOpen, setNavOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [dark, setDark] = useState(false);
-  const [user, setUser] = useState<{ email: string } | null>(null);
+  const [email, setEmail] = useState<string | null>(null);
+  const [hasSession, setHasSession] = useState(false);
   const isAuthPage = pathname === '/login';
   const isCurrent = (href: string) => (href === '/' ? pathname === '/' : pathname.startsWith(href));
 
@@ -58,19 +130,23 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (isAuthPage) return;
     if (!getToken()) { signOut(); return; }
-    api<{ email: string }>('/auth/me').then(setUser).catch(() => { /* api() redirects on 401 */ });
+    setHasSession(true);
+    api<{ email: string }>('/auth/me').then((me) => setEmail(me.email)).catch(() => { /* api() redirects on 401 */ });
   }, [isAuthPage]);
 
+  // Every page gets its own tab title (WCAG 2.4.2).
   useEffect(() => {
-    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-    try { window.localStorage.setItem('motion-theme', dark ? 'dark' : 'light'); } catch { /* ignore */ }
-  }, [dark]);
+    document.title = isAuthPage ? 'Sign in · Motion' : `${page.title} · Motion`;
+  }, [isAuthPage, page.title]);
 
-  const toggleTheme = useCallback(() => setDark((d) => !d), []);
-
-  useEffect(() => {
-    setNavOpen(false);
-  }, [pathname]);
+  const toggleTheme = useCallback(() => {
+    setDark((d) => {
+      const next = !d;
+      document.documentElement.dataset.theme = next ? 'dark' : 'light';
+      try { window.localStorage.setItem('motion-theme', next ? 'dark' : 'light'); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -83,136 +159,66 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return () => document.removeEventListener('keydown', onKey);
   }, []);
 
-  useEffect(() => {
-    if (!navOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setNavOpen(false);
-    };
-    document.addEventListener('keydown', onKey);
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = '';
-    };
-  }, [navOpen]);
-
   if (isAuthPage) return <>{children}</>;
-  if (!user) return null;
-
-  const initial = user.email.charAt(0).toUpperCase();
+  // No token: signOut() is already redirecting to /login.
+  if (!hasSession) return null;
 
   return (
     <div className="app-shell">
       <a className="skip-link" href="#main-content">Skip to content</a>
 
-      {navOpen && (
-        <button className="scrim" type="button" aria-label="Close navigation" onClick={() => setNavOpen(false)} />
-      )}
-
-      <aside className={`sidebar ${navOpen ? 'open' : ''}`} aria-label="Primary">
-        <div className="brand-row">
-          <div className="brand-mark" aria-hidden="true"><span /></div>
-          <span className="brand-name">motion</span>
-          <span className="brand-beta">BETA</span>
-        </div>
-
-        <button className="workspace-switcher" type="button" aria-haspopup="listbox" aria-expanded="false" title="Switch workspace">
-          <span className="workspace-avatar" aria-hidden="true">R</span>
-          <span className="workspace-copy"><strong>Rothenhall Studio</strong><small>Personal workspace</small></span>
-          <Icon name="chevron-down" size={15} />
-        </button>
-
-        <nav className="sidebar-nav" aria-label="Main navigation">
-          <div className="nav-label">Workspace</div>
-          {primaryLinks.map((link) => (
-            <Link
-              className={`nav-item ${isCurrent(link.href) ? 'active' : ''}`}
-              href={link.href}
-              key={link.href}
-              aria-current={isCurrent(link.href) ? 'page' : undefined}
-            >
-              <Icon name={link.icon} size={18} />
-              <span>{link.label}</span>
-              {link.badge && <span className="nav-badge" aria-label={`${link.badge} unread`}>{link.badge}</span>}
-            </Link>
-          ))}
-          <div className="nav-label nav-label-manage">Manage</div>
-          {manageLinks.map((link) => (
-            <Link
-              className={`nav-item ${isCurrent(link.href) ? 'active' : ''}`}
-              href={link.href}
-              key={link.href}
-              aria-current={isCurrent(link.href) ? 'page' : undefined}
-            >
-              <Icon name={link.icon} size={18} />
-              <span>{link.label}</span>
-            </Link>
-          ))}
-        </nav>
-
+      <aside className="sidebar" aria-label="Primary">
+        <SidebarContent isCurrent={isCurrent} />
         <div className="sidebar-bottom">
-          <div className="upgrade-card" role="complementary" aria-label="Upgrade to Pro">
-            <div className="upgrade-icon"><Icon name="sparkles" size={16} /></div>
-            <strong>Unlock your momentum</strong>
-            <p>You&apos;ve used 72% of your free posts. Get unlimited automations and analytics.</p>
-            <div className="upgrade-progress" role="progressbar" aria-valuenow={72} aria-valuemin={0} aria-valuemax={100} aria-label="Free plan usage">
-              <i />
-            </div>
-            <button type="button">Explore Pro <Icon name="arrow-up-right" size={14} /></button>
-          </div>
-          <button className="sidebar-footer-link" type="button">
-            <Icon name="help" size={16} /><span>Help center</span><span className="shortcut">?</span>
-          </button>
-          <button className="user-row" type="button" aria-label={`Sign out ${user.email}`} title="Sign out" onClick={signOut}>
-            <div className="user-avatar" aria-hidden="true">{initial}</div>
-            <div className="user-copy"><strong>Sign out</strong><small>{user.email}</small></div>
-            <Icon name="more" size={17} />
-          </button>
-          <div className="version-tag">motion 0.1.0 · Beta</div>
+          <AccountMenu email={email} dark={dark} onToggleTheme={toggleTheme} variant="sidebar" />
         </div>
       </aside>
+
+      {/* Mobile navigation: a real modal drawer, so focus stays inside and Esc closes it. */}
+      <Sheet open={navOpen} onOpenChange={setNavOpen}>
+        <SheetContent side="left" className="sidebar-sheet w-[280px] gap-0 border-0 bg-[linear-gradient(180deg,var(--navy)_0%,var(--navy-2)_100%)] p-[22px_14px_16px] text-[#e8ecf5] sm:max-w-[280px]">
+          <SheetTitle className="sr-only">Navigation</SheetTitle>
+          <SheetDescription className="sr-only">Go to another part of Motion</SheetDescription>
+          <SidebarContent isCurrent={isCurrent} onNavigate={() => setNavOpen(false)} />
+        </SheetContent>
+      </Sheet>
 
       <main className="main-area">
         <header className="topbar">
           <button
             className="icon-button menu-btn"
             type="button"
-            aria-label={navOpen ? 'Close menu' : 'Open menu'}
+            aria-label="Open menu"
             aria-expanded={navOpen}
-            onClick={() => setNavOpen((v) => !v)}
+            onClick={() => setNavOpen(true)}
           >
             <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
           </button>
           <div className="mobile-brand"><div className="brand-mark" aria-hidden="true"><span /></div><span>motion</span></div>
-          <div className="page-heading">
+          <nav className="page-heading" aria-label="Breadcrumb">
             <span className="crumb">{page.eyebrow}</span>
-            <h1>{page.title}</h1>
-            <span className="env-badge"><i aria-hidden="true" />Live</span>
-          </div>
+            <Icon name="chevron-right" size={13} className="crumb-sep" />
+            <span className="page-title" aria-current="page">{page.title}</span>
+          </nav>
           <div className="topbar-actions">
-            <button className="search-trigger" type="button" aria-label="Search anything (Command K)" onClick={() => setPaletteOpen(true)}>
-              <Icon name="search" size={17} /><span>Search anything</span><kbd>⌘ K</kbd>
+            <button className="search-trigger" type="button" aria-label="Search and commands" aria-keyshortcuts="Control+K Meta+K" onClick={() => setPaletteOpen(true)}>
+              <Icon name="search" size={17} /><span>Search or jump to…</span><kbd>⌘ K</kbd>
             </button>
-            <button
-              className="icon-button"
-              type="button"
-              aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
-              onClick={toggleTheme}
-              title={dark ? 'Switch to light mode' : 'Switch to dark mode'}
-            >
-              <Icon name={dark ? 'sun' : 'moon'} size={18} />
-            </button>
-            <button className="icon-button" type="button" aria-label="Help and docs"><Icon name="help" size={19} /></button>
-            <button className="icon-button notification-button" type="button" aria-label="Notifications, 3 unread">
-              <Icon name="bell" size={19} /><i aria-hidden="true" />
-            </button>
-            <button className="topbar-avatar" type="button" aria-label="Open profile menu">{initial}</button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button className="icon-button" type="button" aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'} onClick={toggleTheme}>
+                  <Icon name={dark ? 'sun' : 'moon'} size={18} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{dark ? 'Light mode' : 'Dark mode'}</TooltipContent>
+            </Tooltip>
+            <div className="topbar-account"><AccountMenu email={email} dark={dark} onToggleTheme={toggleTheme} variant="topbar" /></div>
           </div>
         </header>
         <div className="content-area" id="main-content" tabIndex={-1}>{children}</div>
       </main>
 
-      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} onToggleTheme={toggleTheme} dark={dark} />
+      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} onToggleTheme={toggleTheme} dark={dark} />
     </div>
   );
 }

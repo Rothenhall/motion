@@ -1,8 +1,13 @@
 'use client';
 
+import Link from 'next/link';
 import { FormEvent, useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { Icon } from '../../components/Icons';
 import { api } from '../../lib/api';
+import { errorText, formatName } from '../../lib/format';
+import { Switch } from '@/components/ui/switch';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 type Profile = { niche: string; audience?: string | null; voice?: string | null; pillars: string[]; platforms: string[]; autopilot: boolean; ideasPerRun: number; lastAutopilotAt?: string | null };
 type Idea = { id: string; title: string; hook: string; angle?: string | null; format: string; platform: string; pillar?: string | null; caption?: string | null; hashtags: string[]; status: string; source: string; topic?: string | null; createdAt: string };
@@ -13,7 +18,6 @@ const TABS: { id: Tab; label: string }[] = [{ id: 'NEW', label: 'Fresh' }, { id:
 const emptyProfile = { niche: '', audience: '', voice: '', pillars: '', platforms: ['instagram'], autopilot: false, ideasPerRun: 5 };
 
 function platformLabel(id: string) { return PLATFORMS.find((p) => p.id === id)?.label || id; }
-function formatLabel(format: string) { return format.charAt(0) + format.slice(1).toLowerCase(); }
 function postText(idea: Idea) { return [idea.caption || idea.hook, idea.hashtags.map((h) => `#${h}`).join(' ')].filter(Boolean).join('\n\n'); }
 
 export default function Ideas() {
@@ -27,9 +31,9 @@ export default function Ideas() {
   const [savingProfile, setSavingProfile] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [request, setRequest] = useState({ topic: '', platform: '', count: 5 });
-  const [notice, setNotice] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
+  const [loadError, setLoadError] = useState('');
 
-  const fail = (error: unknown, fallback: string) => setNotice({ kind: 'error', text: error instanceof Error ? error.message : fallback });
+  const fail = (error: unknown, fallback: string) => toast.error(errorText(error, fallback));
 
   const loadIdeas = async (status: Tab = tab) => setIdeas(await api<Idea[]>(`/ideas?status=${status}`));
 
@@ -42,7 +46,7 @@ export default function Ideas() {
           setHasProfile(true);
           setProfileForm({ niche: profile.niche, audience: profile.audience || '', voice: profile.voice || '', pillars: profile.pillars.join(', '), platforms: profile.platforms, autopilot: profile.autopilot, ideasPerRun: profile.ideasPerRun });
         } else setEditingProfile(true);
-      } catch (error) { fail(error, 'Could not load ideas.'); }
+      } catch (error) { setLoadError(errorText(error, 'Could not load ideas.')); }
       finally { setLoading(false); }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -54,12 +58,12 @@ export default function Ideas() {
   };
 
   const saveProfile = async (event: FormEvent) => {
-    event.preventDefault(); setNotice(null); setSavingProfile(true);
+    event.preventDefault(); setSavingProfile(true);
     try {
       const pillars = profileForm.pillars.split(',').map((p) => p.trim()).filter(Boolean);
       await api('/brand-profile', { method: 'PUT', body: JSON.stringify({ ...profileForm, pillars }) });
       setHasProfile(true); setEditingProfile(false);
-      setNotice({ kind: 'success', text: profileForm.autopilot ? `Brand profile saved. Autopilot will add ${profileForm.ideasPerRun} ideas every morning.` : 'Brand profile saved.' });
+      toast.success('Brand profile saved', { description: profileForm.autopilot ? `Autopilot will add ${profileForm.ideasPerRun} ideas every morning.` : undefined });
     } catch (error) { fail(error, 'Could not save your brand profile.'); }
     finally { setSavingProfile(false); }
   };
@@ -70,20 +74,33 @@ export default function Ideas() {
   }));
 
   const generate = async (event: FormEvent) => {
-    event.preventDefault(); setNotice(null); setGenerating(true);
+    event.preventDefault(); setGenerating(true);
     try {
       const created = await api<Idea[]>('/ideas/generate', { method: 'POST', body: JSON.stringify({ ...request, platform: request.platform || undefined }) });
       setTab('NEW');
       await loadIdeas('NEW');
-      setNotice({ kind: 'success', text: `${created.length} new idea${created.length === 1 ? '' : 's'} added.` });
+      toast.success(`${created.length} new idea${created.length === 1 ? '' : 's'} added`);
     } catch (error) { fail(error, 'Could not generate ideas.'); }
     finally { setGenerating(false); }
   };
 
+  // Moves an idea out of the current tab, with Undo instead of a confirm step.
   const setStatus = async (idea: Idea, status: string) => {
     try {
       await api(`/ideas/${idea.id}`, { method: 'PATCH', body: JSON.stringify({ status }) });
       setIdeas((current) => current.filter((i) => i.id !== idea.id));
+      toast(status === 'SAVED' ? 'Idea saved' : 'Idea dismissed', {
+        description: idea.title,
+        action: {
+          label: 'Undo',
+          onClick: async () => {
+            try {
+              await api(`/ideas/${idea.id}`, { method: 'PATCH', body: JSON.stringify({ status: idea.status }) });
+              await loadIdeas();
+            } catch (error) { fail(error, 'Could not undo that.'); }
+          },
+        },
+      });
     } catch (error) { fail(error, 'Could not update this idea.'); }
   };
 
@@ -96,21 +113,21 @@ export default function Ideas() {
 
   return <div>
     <section className="page-intro">
-      <div><div className="eyebrow">Content engine</div><h2>Content ideas</h2><p>Fresh post ideas written for your niche and voice, with hooks and captions ready to schedule.</p></div>
+      <div><div className="eyebrow">Content engine</div><h1>Content ideas</h1><p>Fresh post ideas written for your niche and voice, with hooks and captions ready to schedule.</p></div>
       <div className="page-intro-actions">
-        <span className={autopilotOn ? 'live-pill' : 'status-pill status-draft'} role="status">{autopilotOn && <i aria-hidden="true" />}Autopilot {autopilotOn ? 'on' : 'off'}</span>
-        <a className="btn btn-ghost" href="/hooks"><Icon name="sparkles" size={15} /> Hook library</a>
+        <span className={autopilotOn ? 'live-pill' : 'status-pill status-draft'}>{autopilotOn && <i aria-hidden="true" />}Autopilot {autopilotOn ? 'on' : 'off'}</span>
+        <Link className="btn btn-ghost" href="/hooks"><Icon name="sparkles" size={15} /> Hook library</Link>
       </div>
     </section>
 
-    {!aiReady && <div className="notice notice-error" role="alert"><Icon name="alert" size={15} /> AI is not set up yet. Add OPENROUTER_API_KEY to backend/.env and restart the backend.</div>}
-    {notice && <div className={`notice ${notice.kind === 'success' ? 'notice-success' : 'notice-error'}`} role="alert" aria-live="polite"><Icon name={notice.kind === 'success' ? 'check' : 'alert'} size={15} /> {notice.text}</div>}
+    {!aiReady && <div className="notice notice-warning" role="status"><Icon name="alert" size={15} /> AI is not set up yet. Add OPENROUTER_API_KEY to backend/.env and restart the backend.</div>}
+    {loadError && <div className="notice notice-error" role="alert"><Icon name="alert" size={15} /> {loadError}</div>}
 
     <div className="split-layout">
       <div className="stack">
         <section className="card form-card" aria-labelledby="profile-title">
           <div className="card-header">
-            <div><h3 className="card-title" id="profile-title">Brand profile</h3><p className="card-subtitle">Motion uses this to keep every idea on-brand.</p></div>
+            <div><h2 className="card-title" id="profile-title">Brand profile</h2><p className="card-subtitle">Motion uses this to keep every idea on-brand.</p></div>
             {hasProfile && !editingProfile && <button className="card-action" type="button" onClick={() => setEditingProfile(true)}>Edit</button>}
           </div>
           {loading && <div className="skeleton" style={{ height: 120 }} />}
@@ -130,8 +147,8 @@ export default function Ideas() {
               <div className="tag-row">{PLATFORMS.map((p) => <button key={p.id} type="button" className={`toolbar-filter ${profileForm.platforms.includes(p.id) ? 'active' : ''}`} aria-pressed={profileForm.platforms.includes(p.id)} onClick={() => togglePlatform(p.id)}>{p.label}</button>)}</div>
             </fieldset>
             <div className="autopilot-row">
-              <button className={`toggle ${profileForm.autopilot ? 'on' : ''}`} type="button" role="switch" aria-checked={profileForm.autopilot} aria-labelledby="autopilot-label" onClick={() => setProfileForm({ ...profileForm, autopilot: !profileForm.autopilot })}><span /></button>
-              <div><strong id="autopilot-label">Autopilot</strong><small>New ideas land here every morning at 7.</small></div>
+              <Switch id="autopilot" checked={profileForm.autopilot} aria-describedby="autopilot-hint" onCheckedChange={(autopilot) => setProfileForm({ ...profileForm, autopilot })} />
+              <div><label htmlFor="autopilot"><strong>Autopilot</strong></label><small id="autopilot-hint">New ideas land here every morning at 7.</small></div>
               <select aria-label="Ideas per morning" value={profileForm.ideasPerRun} disabled={!profileForm.autopilot} onChange={(e) => setProfileForm({ ...profileForm, ideasPerRun: Number(e.target.value) })}>{[3, 5, 7, 10].map((n) => <option key={n} value={n}>{n} / day</option>)}</select>
             </div>
             <div className="form-actions">
@@ -142,7 +159,7 @@ export default function Ideas() {
         </section>
 
         <section className="card form-card" aria-labelledby="generate-title">
-          <div className="card-header"><div><h3 className="card-title" id="generate-title">Generate ideas</h3><p className="card-subtitle">Leave the topic empty to get a mix across your pillars.</p></div><span className="stat-icon"><Icon name="sparkles" size={15} /></span></div>
+          <div className="card-header"><div><h2 className="card-title" id="generate-title">Generate ideas</h2><p className="card-subtitle">Leave the topic empty to get a mix across your pillars.</p></div><span className="stat-icon"><Icon name="sparkles" size={15} /></span></div>
           <form className="form-grid" onSubmit={generate}>
             <div className="field"><label className="field-label" htmlFor="topic">Topic or campaign (optional)</label><input id="topic" placeholder="e.g. Back to school week" value={request.topic} onChange={(e) => setRequest({ ...request, topic: e.target.value })} maxLength={300} /></div>
             <div className="form-row">
@@ -158,21 +175,25 @@ export default function Ideas() {
       </div>
 
       <section className="card data-card" aria-labelledby="ideas-title">
-        <div className="card-header"><div><h3 className="card-title" id="ideas-title">Your ideas <span className="list-count">{ideas.length}</span></h3><p className="card-subtitle">Save the keepers, send one to the composer, dismiss the rest.</p></div></div>
-        <div className="inbox-toolbar" role="tablist" aria-label="Idea status">
-          {TABS.map((t) => <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} className={`toolbar-filter ${tab === t.id ? 'active' : ''}`} onClick={() => switchTab(t.id)}>{t.label}</button>)}
+        <div className="card-header"><div><h2 className="card-title" id="ideas-title">Your ideas <span className="list-count">{ideas.length}</span></h2><p className="card-subtitle">Save the keepers, send one to the composer, dismiss the rest.</p></div></div>
+        <div className="inbox-toolbar">
+          <Tabs value={tab} onValueChange={(v) => switchTab(v as Tab)}>
+            <TabsList aria-label="Idea status">
+              {TABS.map((t) => <TabsTrigger key={t.id} value={t.id}>{t.label}</TabsTrigger>)}
+            </TabsList>
+          </Tabs>
         </div>
         <div className="idea-list">
-          {loading && <div className="empty-state" aria-busy="true">Loading ideas…</div>}
+          {loading && [0, 1, 2].map((i) => <div key={i} className="skeleton" style={{ height: 120, marginBottom: 12 }} aria-hidden="true" />)}
           {!loading && ideas.map((idea) => (
             <article className="idea-card" key={idea.id}>
               <div className="idea-meta">
                 <span className="tag">{platformLabel(idea.platform)}</span>
-                <span className="tag">{formatLabel(idea.format)}</span>
+                <span className="tag">{formatName(idea.format)}</span>
                 {idea.pillar && <span className="tag tag-muted">{idea.pillar}</span>}
                 {idea.source === 'AUTOPILOT' && <span className="tag tag-brand">Autopilot</span>}
               </div>
-              <h4>{idea.title}</h4>
+              <h3>{idea.title}</h3>
               <p className="idea-hook">&ldquo;{idea.hook}&rdquo;</p>
               {idea.angle && <p className="idea-angle">{idea.angle}</p>}
               {idea.caption && <details className="idea-caption"><summary>Caption draft</summary><p>{idea.caption}</p>{idea.hashtags.length > 0 && <p className="idea-tags">{idea.hashtags.map((h) => `#${h}`).join(' ')}</p>}</details>}

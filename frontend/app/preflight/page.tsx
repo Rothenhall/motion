@@ -1,7 +1,9 @@
 'use client';
 
 import { createContext, FormEvent, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import { Icon } from '../../components/Icons';
+import { useConfirm } from '../../components/ConfirmDialog';
 import { API, api, authHeaders } from '../../lib/api';
 
 type Rating = 'WEAK' | 'OK' | 'STRONG';
@@ -76,10 +78,10 @@ export default function Preflight() {
   const [selected, setSelected] = useState<{ type: 'check' | 'group'; id: string } | null>(null);
   const [check, setCheck] = useState<Check | null>(null);
   const [group, setGroup] = useState<Group | null>(null);
-  const [notice, setNotice] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
+  const [confirm, confirmDialog] = useConfirm();
   const fileRefs = useRef<(HTMLInputElement | null)[]>([]);
 
-  const fail = (error: unknown, fallback: string) => setNotice({ kind: 'error', text: error instanceof Error ? error.message : fallback });
+  const fail = (error: unknown, fallback: string) => toast.error(error instanceof Error ? error.message : fallback);
   const loadHistory = useCallback(() => api<Check[]>('/preflight').then(setHistory).catch(() => { /* list is secondary */ }), []);
 
   useEffect(() => {
@@ -126,7 +128,7 @@ export default function Preflight() {
 
   const attach = async (index: number, files: FileList | null) => {
     if (!files?.length) return;
-    setNotice(null); setUploading(index);
+    setUploading(index);
     try {
       const urls = await uploadFiles(files);
       setDrafts((all) => all.map((d, i) => i === index ? { ...d, mediaUrls: urls.some(isVideo) ? urls.slice(0, 1) : [...d.mediaUrls.filter((u) => !isVideo(u)), ...urls].slice(0, 10) } : d));
@@ -135,7 +137,7 @@ export default function Preflight() {
   };
 
   const submit = async (event: FormEvent) => {
-    event.preventDefault(); setNotice(null); setSubmitting(true);
+    event.preventDefault(); setSubmitting(true);
     try {
       if (mode === 'single') {
         const created = await api<Check>('/preflight', { method: 'POST', body: JSON.stringify({ platform, caption, mediaUrls: drafts[0].mediaUrls, text: drafts[0].text }) });
@@ -154,6 +156,7 @@ export default function Preflight() {
   };
 
   const remove = async (id: string) => {
+    if (!(await confirm({ title: 'Delete this check?', description: 'Its results are removed for good.', confirmLabel: 'Delete check', destructive: true }))) return;
     try {
       await api(`/preflight/${id}`, { method: 'DELETE' });
       setHistory((h) => h.filter((c) => c.id !== id));
@@ -164,7 +167,7 @@ export default function Preflight() {
   const saveHook = async (text: string) => {
     try {
       await api('/hooks', { method: 'POST', body: JSON.stringify({ text, platform, category: 'CURIOSITY' }) });
-      setNotice({ kind: 'success', text: 'Saved to your hook library.' });
+      toast.success('Saved to your hook library');
     } catch (error) { fail(error, 'Could not save this hook.'); }
   };
 
@@ -178,8 +181,8 @@ export default function Preflight() {
       </div>
     </section>
 
-    {!status.ai && <div className="notice notice-error" role="alert"><Icon name="alert" size={15} /> AI is not set up yet. Add OPENROUTER_API_KEY to backend/.env and restart the backend.</div>}
-    {notice && <div className={`notice ${notice.kind === 'success' ? 'notice-success' : 'notice-error'}`} role="alert" aria-live="polite"><Icon name={notice.kind === 'success' ? 'check' : 'alert'} size={15} /> {notice.text}</div>}
+    {!status.ai && <div className="notice notice-warning" role="status"><Icon name="alert" size={15} /> AI is not set up yet. Add OPENROUTER_API_KEY to backend/.env and restart the backend.</div>}
+    {confirmDialog}
 
     <div className="split-layout">
       <div className="stack">

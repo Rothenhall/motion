@@ -31,14 +31,8 @@ export class DashboardController {
     ]);
 
     return {
-      stats: {
-        scheduled,
-        published,
-        failed,
-        // Engagement metrics are intentionally nullable until platform insights are connected.
-        engagement: null,
-        engagementChange: null,
-      },
+      // Engagement lives in /analytics, which reads synced Meta insights.
+      stats: { scheduled, published, failed },
       accounts,
       upcomingPosts,
       activeAutomationCount,
