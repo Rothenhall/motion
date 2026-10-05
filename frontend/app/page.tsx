@@ -10,10 +10,10 @@ import { errorText, formatName, platformFor, platformName } from '../lib/format'
 
 type Account = { id: string; provider: string; externalId: string; name?: string | null };
 type Post = { id: string; platform: string; mediaType: string; caption?: string | null; scheduledAt: string; status: string; error?: string | null; account?: Account };
-type DashboardData = { stats: { scheduled: number; published: number; failed: number; engagement: number | null; engagementChange: number | null }; upcomingPosts: Post[]; accounts: Account[]; automationCount: number; activeAutomationCount: number };
-type Analytics = { hasInsights: boolean; series: TrendPoint[] };
+type DashboardData = { stats: { scheduled: number; published: number; failed: number }; upcomingPosts: Post[]; accounts: Account[]; automationCount: number; activeAutomationCount: number };
+type Analytics = { hasInsights: boolean; series: TrendPoint[]; totals: { engagementRate: number | null; engagementRateChange: number | null } };
 
-const emptyDashboard: DashboardData = { stats: { scheduled: 0, published: 0, failed: 0, engagement: null, engagementChange: null }, upcomingPosts: [], accounts: [], automationCount: 0, activeAutomationCount: 0 };
+const emptyDashboard: DashboardData = { stats: { scheduled: 0, published: 0, failed: 0 }, upcomingPosts: [], accounts: [], automationCount: 0, activeAutomationCount: 0 };
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' }).format(new Date(value));
@@ -60,11 +60,13 @@ export default function Home() {
   }, []);
   const todayLabel = useMemo(() => new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric' }).format(new Date()), []);
 
-  const engagementChange = data.stats.engagementChange;
+  // Same 30-day figure the Analytics page shows, from synced Meta insights.
+  const engagement = analytics?.hasInsights ? analytics.totals.engagementRate : null;
+  const engagementChange = analytics?.hasInsights ? analytics.totals.engagementRateChange : null;
   const stats = [
     { label: 'Scheduled posts', value: data.stats.scheduled, hint: 'waiting in your queue', icon: 'calendar' as const, href: '/planner' },
     { label: 'Published this month', value: data.stats.published, hint: data.stats.failed ? `${data.stats.failed} failed` : 'no failures', icon: 'send' as const, href: '/planner', warn: data.stats.failed > 0 },
-    { label: 'Engagement rate', value: data.stats.engagement == null ? '—' : `${data.stats.engagement}%`, hint: data.stats.engagement == null ? 'sync insights to see this' : 'across all channels', icon: 'chart' as const, href: '/analytics', change: engagementChange },
+    { label: 'Engagement rate', value: engagement == null ? '—' : `${engagement}%`, hint: engagement == null ? 'sync insights to see this' : 'last 30 days, all channels', icon: 'chart' as const, href: '/analytics', change: engagementChange },
     { label: 'Active automations', value: data.activeAutomationCount, hint: `of ${data.automationCount} rule${data.automationCount === 1 ? '' : 's'}`, icon: 'zap' as const, href: '/automations' },
   ];
 
