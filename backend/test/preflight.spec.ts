@@ -8,7 +8,7 @@ import { AppModule } from '../src/app.module';
 import { AiService, PreflightInput, PreflightReport } from '../src/ai/ai.service';
 import { UPLOAD_DIR } from '../src/media.controller';
 import { PrismaService } from '../src/prisma.service';
-import { TribeClient } from '../src/preflight/tribe.client';
+import { NotCachedError, TribeClient } from '../src/preflight/tribe.client';
 
 const report = (score: number): PreflightReport => ({
   verdict: 'Your opening is slow; many viewers may swipe away before the point.',
@@ -27,7 +27,10 @@ const simulation = (hook: number) => ({
   moments: [{ kind: 'drop_risk', start: 1, end: 3, level: 30, drivers: [{ system: 'visual_motion', direction: 'low', z: -1.2 }, { system: 'default_mode', direction: 'high', z: 0.9 }] }],
   transcript: [{ word: 'hello', start: 0.5, duration: 0.2 }],
   has_audio: true, model: 'facebook/tribev2', version: '1',
+  brain: BRAIN as typeof BRAIN | undefined,
 });
+
+const BRAIN = { mesh: 'fsaverage5', fps: 1, shape: [4, 20484] as [number, number], dtype: 'uint8', range: [-0.3, 0.5] as [number, number], encoding: 'zlib+base64', data: 'eJw=' };
 
 describe('Pre-flight check', () => {
   let app: INestApplication;
@@ -36,7 +39,7 @@ describe('Pre-flight check', () => {
   let bob: string;
   const files: string[] = [];
   const ai = { configured: true, model: 'test-model', reviewContent: jest.fn(async (_: PreflightInput) => report(40)) };
-  const tribe = { configured: true, analyze: jest.fn(async (_path: string, _opts: { soundOff: boolean }) => simulation(30)) };
+  const tribe = { configured: true, analyze: jest.fn(async (_path: string, _opts: { soundOff: boolean; cacheOnly?: boolean }) => simulation(30)) };
 
   const http = () => request(app.getHttpServer());
   const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
@@ -112,6 +115,49 @@ describe('Pre-flight check', () => {
     expect(input.simulation!.responsesBySecond).toEqual({ 'noticing people and faces': [20, 30, 70, 60] });
     expect(JSON.stringify(input.simulation)).not.toMatch(/visual_motion|default_mode|brain/);
     expect(input.facts).toMatchObject({ vertical: true, hasSoundtrack: true });
+  });
+
+  it('stores the brain map apart from the check and serves it on its own', async () => {
+    const created = await http().post('/preflight').set(auth(alice)).send({ mediaUrls: [video()] }).expect(201);
+    const done = await finished(alice, created.body.id);
+    expect(done).not.toHaveProperty('brain');
+    expect(done.signals.simulation).not.toHaveProperty('brain');
+    expect(JSON.stringify(ai.reviewContent.mock.calls[0][0].simulation)).not.toContain('fsaverage5');
+    expect((await http().get('/preflight').set(auth(alice)).expect(200)).body.find((c: any) => c.id === done.id)).not.toHaveProperty('brain');
+    expect((await http().get(`/preflight/${done.id}/brain`).set(auth(alice)).expect(200)).body).toEqual(BRAIN);
+    await http().get(`/preflight/${done.id}/brain`).set(auth(bob)).expect(404);
+    expect((await http().post(`/preflight/${done.id}/brain`).set(auth(alice)).send({}).expect(201)).body).toEqual({ status: 'READY' });
+  });
+
+  it('loads a missing brain view from cache for free, and only runs the model when allowed', async () => {
+    tribe.analyze.mockResolvedValueOnce({ ...simulation(30), brain: undefined });
+    const created = await http().post('/preflight').set(auth(alice)).send({ mediaUrls: [video()] }).expect(201);
+    const done = await finished(alice, created.body.id);
+    await http().get(`/preflight/${done.id}/brain`).set(auth(alice)).expect(404);
+
+    // Cached: filled in straight away, asking the service not to run the model.
+    tribe.analyze.mockClear();
+    expect((await http().post(`/preflight/${done.id}/brain`).set(auth(alice)).send({}).expect(201)).body).toEqual({ status: 'READY' });
+    expect(tribe.analyze).toHaveBeenCalledWith(expect.any(String), { soundOff: true, cacheOnly: true });
+    await http().get(`/preflight/${done.id}/brain`).set(auth(alice)).expect(200);
+
+    // Not cached: say so, and start a run only with allowFresh.
+    tribe.analyze.mockResolvedValueOnce({ ...simulation(30), brain: undefined });
+    const second = await finished(alice, (await http().post('/preflight').set(auth(alice)).send({ mediaUrls: [video()] }).expect(201)).body.id);
+    tribe.analyze.mockClear();
+    tribe.analyze.mockRejectedValueOnce(new NotCachedError('not cached'));
+    expect((await http().post(`/preflight/${second.id}/brain`).set(auth(alice)).send({}).expect(201)).body).toEqual({ status: 'NEEDS_RUN' });
+    expect(tribe.analyze).toHaveBeenCalledTimes(1);
+    tribe.analyze.mockRejectedValueOnce(new NotCachedError('not cached'));
+    expect((await http().post(`/preflight/${second.id}/brain`).set(auth(alice)).send({ allowFresh: true }).expect(201)).body).toEqual({ status: 'RUNNING' });
+    expect(tribe.analyze).toHaveBeenLastCalledWith(expect.any(String), { soundOff: true });
+    for (let i = 0; i < 50 && (await http().get(`/preflight/${second.id}/brain`).set(auth(alice))).status !== 200; i++) await new Promise((r) => setTimeout(r, 50));
+    expect((await http().get(`/preflight/${second.id}`).set(auth(alice)).expect(200)).body.brainStatus).toBeNull();
+    await http().get(`/preflight/${second.id}/brain`).set(auth(alice)).expect(200);
+
+    // Images and text have no brain view.
+    const text = await finished(alice, (await http().post('/preflight').set(auth(alice)).send({ text: 'no brain here' }).expect(201)).body.id);
+    await http().post(`/preflight/${text.id}/brain`).set(auth(alice)).send({}).expect(400);
   });
 
   it('still gives insights when the simulation is not configured or fails', async () => {

@@ -75,6 +75,14 @@ def test_brain_map_only_when_asked(client):
     assert lo <= decoded.min() and decoded.max() <= hi
 
 
+def test_cache_only_never_runs_the_model(client):
+    assert post(client, include_brain="true", cache_only="true").status_code == 404
+    assert service.app.state.runner.calls == 0
+    first = post(client, include_brain="true").json()
+    assert post(client, include_brain="true", cache_only="true").json() == first
+    assert service.app.state.runner.calls == 1
+
+
 def test_health(client):
     assert client.get("/health").json()["model_loaded"] is True
 

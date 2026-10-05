@@ -198,6 +198,8 @@ model ContentCheck {
   engine      String?   // AI_REVIEW | AUDIENCE_SIMULATION (TRIBE v2 + AI review)
   signals     String?   // JSON: measured video facts and the audience simulation summary
   report      String?   // JSON: the insights shown to the user
+  brain       String?   // JSON: per-second simulated cortical map (tribe-service encode_brain), served separately
+  brainStatus String?   // RUNNING | FAILED while a "load brain view" run is in flight or after it failed
   error       String?
   attempts    Int       @default(0)
   startedAt   DateTime?

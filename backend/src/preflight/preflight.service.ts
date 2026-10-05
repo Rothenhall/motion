@@ -3,11 +3,11 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { randomUUID } from 'crypto';
 import { existsSync } from 'fs';
 import { join } from 'path';
-import { ContentCheck } from '@prisma/client';
+import { ContentCheck, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { AiService, PLATFORMS, PreflightReport, ReviewImage } from '../ai/ai.service';
 import { UPLOAD_DIR } from '../media.controller';
-import { AudienceSimulation, TribeClient } from './tribe.client';
+import { AudienceSimulation, BrainMap, NotCachedError, TribeClient } from './tribe.client';
 import { extractFrames, frameTimes, hashFiles, imageForReview, probeVideo, sceneCuts, VideoFacts } from './media-probe';
 
 export type CheckInput = { platform?: string; caption?: string; text?: string; mediaUrls?: unknown; label?: string };
@@ -23,6 +23,13 @@ const STUCK_AFTER_MS = 45 * 60 * 1000; // longer than the 30-minute audience sim
 const MAX_ATTEMPTS = 2;
 const UPLOAD_NAME = /^\d+-[0-9a-f]{8}\.([a-z0-9]+)$/;
 const MIME: Record<string, string> = { mp4: 'video/mp4', mov: 'video/quicktime', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif' };
+
+/** Every column except the brain map, which can be megabytes; GET /preflight/:id/brain serves it. */
+const WITHOUT_BRAIN = {
+  id: true, userId: true, groupId: true, label: true, kind: true, platform: true, caption: true, text: true, mediaUrls: true,
+  mediaHash: true, status: true, engine: true, signals: true, report: true, brainStatus: true, error: true, attempts: true,
+  startedAt: true, completedAt: true, createdAt: true, updatedAt: true,
+} satisfies Prisma.ContentCheckSelect;
 
 function parseJson<T>(value: string | null | undefined, fallback: T): T {
   try { return value ? JSON.parse(value) : fallback; } catch { return fallback; }
@@ -100,22 +107,70 @@ export class PreflightService {
   // ---- read ----
 
   async list(userId: string) {
-    const checks = await this.prisma.contentCheck.findMany({ where: { userId }, orderBy: { createdAt: 'desc' }, take: 50 });
+    const checks = await this.prisma.contentCheck.findMany({ where: { userId }, orderBy: { createdAt: 'desc' }, take: 50, select: WITHOUT_BRAIN });
     return checks.map((c) => {
       const { signals, report, ...rest } = serialize(c);
-      return { ...rest, verdict: report?.verdict ?? null, hook: report?.hook ?? null };
+      // The list shows progress, so keep the stage while a check runs.
+      return { ...rest, stage: signals?.stage ?? null, verdict: report?.verdict ?? null, hook: report?.hook ?? null };
     });
   }
 
   async get(userId: string, id: string) {
-    const check = await this.prisma.contentCheck.findFirst({ where: { id, userId } });
+    const check = await this.prisma.contentCheck.findFirst({ where: { id, userId }, select: WITHOUT_BRAIN });
     if (!check) throw new NotFoundException('Check not found.');
     return serialize(check);
   }
 
+  // ---- brain view ----
+
+  /** The stored per-second brain map (100 KB to a few MB), served apart from the check itself. */
+  async brain(userId: string, id: string) {
+    const check = await this.prisma.contentCheck.findFirst({ where: { id, userId }, select: { brain: true } });
+    if (!check) throw new NotFoundException('Check not found.');
+    const brain = parseJson<BrainMap | null>(check.brain, null);
+    if (!brain) throw new NotFoundException('No brain view for this check yet.');
+    return brain;
+  }
+
+  /**
+   * Fills in the brain map for a finished reel check that has none (checks made before it was stored).
+   * Free when the simulation service still has the clip cached; otherwise needs allowFresh, because it
+   * starts a new GPU run (10-16 minutes) that finishes in the background.
+   */
+  async loadBrain(userId: string, id: string, allowFresh: boolean): Promise<{ status: 'READY' | 'NEEDS_RUN' | 'RUNNING' }> {
+    const check = await this.prisma.contentCheck.findFirst({ where: { id, userId }, select: { kind: true, status: true, mediaUrls: true, signals: true, brainStatus: true, brain: true } });
+    if (!check) throw new NotFoundException('Check not found.');
+    if (check.brain) return { status: 'READY' };
+    if (check.brainStatus === 'RUNNING') return { status: 'RUNNING' };
+    if (!this.tribe.configured) throw new ServiceUnavailableException('The audience simulation is not set up on this server.');
+    if (check.kind !== 'VIDEO' || check.status !== 'DONE') throw new BadRequestException('The brain view is only available for finished reel checks.');
+    const signals = parseJson<Signals | null>(check.signals, null);
+    if (!signals?.simulation) throw new BadRequestException('This check ran without the audience simulation.');
+    const video = resolveUpload(parseJson<string[]>(check.mediaUrls, [])[0] || '');
+    const soundOff = Boolean(signals.video?.hasAudio);
+    try {
+      const sim = await this.tribe.analyze(video.path, { soundOff, cacheOnly: true });
+      if (!sim.brain) throw new Error('The simulation service returned no brain map.');
+      await this.prisma.contentCheck.update({ where: { id }, data: { brain: JSON.stringify(sim.brain), brainStatus: null } });
+      return { status: 'READY' };
+    } catch (error) {
+      if (!(error instanceof NotCachedError)) throw new ServiceUnavailableException(error instanceof Error ? error.message : 'The audience simulation failed.');
+    }
+    if (!allowFresh) return { status: 'NEEDS_RUN' };
+    const claimed = await this.prisma.contentCheck.updateMany({ where: { id, OR: [{ brainStatus: null }, { brainStatus: { not: 'RUNNING' } }] }, data: { brainStatus: 'RUNNING' } });
+    if (!claimed.count) return { status: 'RUNNING' };
+    void this.tribe.analyze(video.path, { soundOff })
+      .then((sim) => this.prisma.contentCheck.update({ where: { id }, data: sim.brain ? { brain: JSON.stringify(sim.brain), brainStatus: null } : { brainStatus: 'FAILED' } }))
+      .catch(async (error) => {
+        this.log.warn(`Brain view for ${id} failed: ${error instanceof Error ? error.message : error}`);
+        await this.prisma.contentCheck.update({ where: { id }, data: { brainStatus: 'FAILED' } }).catch(() => undefined);
+      });
+    return { status: 'RUNNING' };
+  }
+
   /** Versions ranked by how well they open. Same-model relative comparisons are the most trustworthy use of the simulation. */
   async group(userId: string, groupId: string) {
-    const checks = (await this.prisma.contentCheck.findMany({ where: { userId, groupId }, orderBy: { createdAt: 'asc' } })).map(serialize);
+    const checks = (await this.prisma.contentCheck.findMany({ where: { userId, groupId }, orderBy: { createdAt: 'asc' }, select: WITHOUT_BRAIN })).map(serialize);
     if (!checks.length) throw new NotFoundException('Comparison not found.');
     const done = checks.every((c) => c.status === 'DONE' || c.status === 'FAILED');
     const scored = checks.filter((c) => c.status === 'DONE');
@@ -173,6 +228,7 @@ export class PreflightService {
       const signals: Record<string, any> = {};
       const images: ReviewImage[] = [];
       let simulation: AudienceSimulation | null = null;
+      let brain: BrainMap | null = null;
 
       if (check.kind === 'VIDEO') {
         const video = media[0];
@@ -183,8 +239,11 @@ export class PreflightService {
           await this.setStage(id, 'SIMULATING');
           if (facts.durationSec > MAX_SIMULATION_SEC) signals.simulationError = 'Audience simulation runs on videos up to 3 minutes.';
           else {
-            try { simulation = await this.tribe.analyze(video.path, { soundOff: facts.hasAudio }); }
-            catch (error) { signals.simulationError = error instanceof Error ? error.message : 'The audience simulation failed.'; }
+            try {
+              const { brain: map, ...rest } = await this.tribe.analyze(video.path, { soundOff: facts.hasAudio });
+              simulation = rest;
+              brain = map ?? null;
+            } catch (error) { signals.simulationError = error instanceof Error ? error.message : 'The audience simulation failed.'; }
           }
         }
         if (simulation) {
@@ -225,6 +284,8 @@ export class PreflightService {
           mediaHash,
           signals: JSON.stringify(signals),
           report: JSON.stringify(report),
+          brain: brain ? JSON.stringify(brain) : null,
+          brainStatus: null,
           error: null,
           completedAt: new Date(),
         },
@@ -356,7 +417,7 @@ function simulationForReview(sim: AudienceSimulation) {
 
 type Signals = { stage?: string; video?: VideoFacts & { cuts: number[]; frameTimes: number[] }; simulation?: AudienceSimulation; simulationError?: string };
 
-function serialize(check: ContentCheck) {
+function serialize(check: Omit<ContentCheck, 'brain'>) {
   const { mediaHash, attempts, ...rest } = check;
   const signals = parseJson<Signals | null>(check.signals, null);
   if (signals?.simulation) delete (signals.simulation as Partial<AudienceSimulation>).transcript;

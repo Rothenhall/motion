@@ -1,6 +1,6 @@
 """Motion audience simulation service: TRIBE v2 behind a small HTTP API.
 
-POST /analyze  (multipart: file=<video>, sound_off=true|false, include_brain=true|false)
+POST /analyze  (multipart: file=<video>, sound_off=true|false, include_brain=true|false, cache_only=true|false)
   -> per-second curves (0-100), scores, flagged moments and a transcript; with
      include_brain, also the compressed per-second cortical map (see networks.encode_brain).
 GET  /health
@@ -82,6 +82,7 @@ def analyze(
     file: UploadFile = File(...),
     sound_off: bool = Form(True),
     include_brain: bool = Form(False),
+    cache_only: bool = Form(False),
     authorization: str | None = Header(None),
 ) -> dict[str, Any]:
     check_token(authorization)
@@ -108,6 +109,9 @@ def analyze(
         cached = CACHE_DIR / "results" / f"{hashlib.sha256(key.encode()).hexdigest()}.json"
         if cached.exists():
             return json.loads(cached.read_text())
+        if cache_only:
+            # Lets the backend offer a free result without starting a GPU run.
+            raise HTTPException(status_code=404, detail="not cached")
 
         try:
             full, muted, has_audio = app.state.runner.run(video, sound_off=sound_off)

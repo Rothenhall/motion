@@ -37,6 +37,17 @@ export class PreflightController {
     return this.preflight.get(user.id, id);
   }
 
+  @Get(':id/brain')
+  brain(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.preflight.brain(user.id, id);
+  }
+
+  /** Fill in the brain view for an older reel check: free from cache, or a new GPU run when allowFresh is true. */
+  @Post(':id/brain')
+  loadBrain(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() body: { allowFresh?: boolean }) {
+    return this.preflight.loadBrain(user.id, id, body?.allowFresh === true);
+  }
+
   @Post(':id/retry')
   retry(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.preflight.retry(user.id, id);
