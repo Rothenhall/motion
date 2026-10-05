@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
-import { ClaudeService, HOOK_CATEGORIES, PLATFORMS } from './claude.service';
+import { AiService, HOOK_CATEGORIES, PLATFORMS } from './ai.service';
 import { HOOK_SEEDS } from './hook-seeds';
 import { IdeasService } from './ideas.service';
 
@@ -17,7 +17,7 @@ function checkPlatform(platform?: string) {
 
 @Injectable()
 export class HooksService {
-  constructor(private prisma: PrismaService, private claude: ClaudeService, private ideas: IdeasService) {}
+  constructor(private prisma: PrismaService, private ai: AiService, private ideas: IdeasService) {}
 
   /** Gives a user their own copy of the starter library the first time they open it. */
   private async ensureSeeded(userId: string) {
@@ -59,7 +59,7 @@ export class HooksService {
     checkCategory(body.category || undefined);
     checkPlatform(body.platform || undefined);
     const profile = await this.ideas.getProfile(userId);
-    const hooks = await this.claude.generateHooks({
+    const hooks = await this.ai.generateHooks({
       brand: profile && { niche: profile.niche, audience: profile.audience, voice: profile.voice, pillars: profile.pillars },
       topic,
       platform: body.platform || undefined,

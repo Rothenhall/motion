@@ -6,6 +6,8 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma.service';
 import { PublishersService } from '../src/publishers.service';
 import { MetaService } from '../src/meta.service';
+import { AutomationsService } from '../src/automations.service';
+import { SchedulerService } from '../src/scheduler.service';
 import { decryptToken, isEncryptedToken, signToken } from '../src/auth/crypto';
 
 const sign = (body: string, secret: string) => `sha256=${createHmac('sha256', secret).update(body).digest('hex')}`;
@@ -13,7 +15,7 @@ const sign = (body: string, secret: string) => `sha256=${createHmac('sha256', se
 describe('API security', () => {
   let app: INestApplication;
   let prisma: PrismaService;
-  const pub = { replyInstagramComment: jest.fn(), replyFacebookComment: jest.fn(), privateReplyInstagram: jest.fn(), publish: jest.fn() };
+  const pub = { replyInstagramComment: jest.fn(), replyFacebookComment: jest.fn(), privateReplyInstagram: jest.fn(), privateReplyFacebook: jest.fn(), publish: jest.fn() };
   let alice: string;
   let bob: string;
 
@@ -48,6 +50,8 @@ describe('API security', () => {
       ['get', '/analytics'], ['post', '/analytics/sync'],
       ['get', '/brand-profile'], ['put', '/brand-profile'], ['get', '/ideas'], ['post', '/ideas/generate'], ['patch', '/ideas/x'], ['delete', '/ideas/x'],
       ['get', '/hooks'], ['post', '/hooks'], ['post', '/hooks/generate'], ['patch', '/hooks/x/favorite'], ['post', '/hooks/x/use'], ['delete', '/hooks/x'],
+      ['get', '/preflight'], ['post', '/preflight'], ['get', '/preflight/status'], ['post', '/preflight/compare'], ['get', '/preflight/x'],
+      ['get', '/preflight/groups/x'], ['post', '/preflight/x/retry'], ['delete', '/preflight/x'],
       ['get', '/auth/me'], ['get', '/auth/instagram/start'], ['post', '/auth/exchange'],
     ];
 
@@ -208,6 +212,25 @@ describe('API security', () => {
       expect(new URL(res.body.url).searchParams.get('state')).toBeTruthy();
     });
 
+    it('sends Threads login to threads.net with the Threads app ID', async () => {
+      await http().get('/auth/threads/start').set('Authorization', `Bearer ${alice}`).expect(400);
+      process.env.META_THREADS_APP_ID = 'threads-app-id';
+      process.env.META_THREADS_APP_SECRET = 'threads-secret';
+      try {
+        const url = new URL((await http().get('/auth/threads/start').set('Authorization', `Bearer ${alice}`).expect(200)).body.url);
+        expect(url.origin + url.pathname).toBe('https://threads.net/oauth/authorize');
+        expect(url.searchParams.get('client_id')).toBe('threads-app-id');
+      } finally {
+        delete process.env.META_THREADS_APP_ID;
+        delete process.env.META_THREADS_APP_SECRET;
+      }
+    });
+
+    it('asks Facebook for the permissions comment replies and webhooks need', async () => {
+      const url = new URL((await http().get('/auth/facebook/start').set('Authorization', `Bearer ${alice}`).expect(200)).body.url);
+      expect(url.searchParams.get('scope')!.split(',')).toEqual(expect.arrayContaining(['pages_manage_engagement', 'pages_manage_metadata', 'pages_messaging']));
+    });
+
     it('refuses callbacks without valid state', async () => {
       for (const q of ['code=abc', 'code=abc&state=forged', `code=abc&state=${signToken('u', 'oauth_state', 60, { provider: 'facebook' })}`]) {
         const res = await http().get(`/auth/instagram/callback?${q}`).expect(302);
@@ -236,13 +259,104 @@ describe('API security', () => {
       expect(pub.replyInstagramComment).not.toHaveBeenCalled();
     });
 
+    const deliver = async (body: unknown, secret = 'test-ig-app-secret') => {
+      const raw = JSON.stringify(body);
+      await http().post('/webhooks/meta').set('Content-Type', 'application/json').set('X-Hub-Signature-256', sign(raw, secret)).send(raw).expect(200);
+      await app.get(AutomationsService).idle();
+    };
+    const igComment = (id: string, from: Record<string, string>, text = 'hello') => ({
+      object: 'instagram',
+      entry: [{ id: 'ig-bob', time: Math.floor(Date.now() / 1000), changes: [{ field: 'comments', value: { id, text, media: { id: 'm1' }, from } }] }],
+    });
+
     it('runs only the matching channel\'s automations for a signed delivery', async () => {
-      await http().post('/webhooks/meta').set('Content-Type', 'application/json').set('X-Hub-Signature-256', sign(payload, 'test-ig-app-secret')).send(payload).expect(201);
+      await http().post('/webhooks/meta').set('Content-Type', 'application/json').set('X-Hub-Signature-256', sign(payload, 'test-ig-app-secret')).send(payload).expect(200);
+      await app.get(AutomationsService).idle();
       expect(pub.replyInstagramComment).toHaveBeenCalledWith('comment-1', 'thanks!', 'bob-secret-token');
 
       const bobEvents = (await http().get('/comments/events').set('Authorization', `Bearer ${bob}`).expect(200)).body;
       expect(bobEvents.map((e: any) => e.commentId)).toEqual(['comment-1']);
       expect((await http().get('/comments/events').set('Authorization', `Bearer ${alice}`).expect(200)).body).toEqual([]);
+    });
+
+    it('replies once when Meta delivers the same comment again', async () => {
+      pub.replyInstagramComment.mockClear();
+      await deliver(JSON.parse(payload));
+      expect(pub.replyInstagramComment).not.toHaveBeenCalled();
+    });
+
+    it('never replies to the account\'s own comments or to its own replies', async () => {
+      pub.replyInstagramComment.mockClear();
+      await deliver(igComment('own-1', { id: 'ig-bob' }));
+      expect(pub.replyInstagramComment).not.toHaveBeenCalled();
+
+      pub.replyInstagramComment.mockResolvedValueOnce('reply-1');
+      await deliver(igComment('fan-2', { id: 'fan' }));
+      expect(pub.replyInstagramComment).toHaveBeenCalledTimes(1);
+      // The webhook for Motion's own reply, even with an unfamiliar sender id.
+      await deliver(igComment('reply-1', { id: 'some-scoped-id' }));
+      expect(pub.replyInstagramComment).toHaveBeenCalledTimes(1);
+    });
+
+    describe('Facebook Page comments', () => {
+      const feed = (commentId: string, verb: string, extra: Record<string, unknown> = {}) => ({
+        object: 'page',
+        entry: [{ id: 'page-bob', time: Math.floor(Date.now() / 1000), changes: [{ field: 'feed', value: { item: 'comment', verb, comment_id: commentId, post_id: 'p1', from: { id: 'fan', name: 'Fan' }, message: 'price?', created_time: Math.floor(Date.now() / 1000), ...extra } }] }],
+      });
+
+      beforeAll(async () => {
+        const page = (await http().post('/accounts').set('Authorization', `Bearer ${bob}`)
+          .send({ provider: 'facebook_page', externalId: 'page-bob', name: 'Bob Page', accessToken: 'bob-page-token' }).expect(201)).body.id;
+        await http().post('/automations').set('Authorization', `Bearer ${bob}`)
+          .send({ accountId: page, name: 'price', trigger: 'COMMENT_KEYWORD', keyword: 'price', replyMode: 'PUBLIC_AND_DM', publicReply: 'Sent you a DM', dmText: 'Here is the price' }).expect(201);
+      });
+
+      it('replies and sends a private reply for a new comment', async () => {
+        await deliver(feed('fb-c1', 'add'), 'test-app-secret');
+        expect(pub.replyFacebookComment).toHaveBeenCalledWith('fb-c1', 'Sent you a DM', 'bob-page-token');
+        expect(pub.privateReplyFacebook).toHaveBeenCalledWith('page-bob', 'fb-c1', 'Here is the price', 'bob-page-token');
+      });
+
+      it('ignores edits, removals and the Page\'s own comments', async () => {
+        pub.replyFacebookComment.mockClear();
+        pub.privateReplyFacebook.mockClear();
+        await deliver(feed('fb-c2', 'edited'), 'test-app-secret');
+        await deliver(feed('fb-c3', 'remove'), 'test-app-secret');
+        await deliver(feed('fb-c4', 'add', { from: { id: 'page-bob', name: 'Bob Page' } }), 'test-app-secret');
+        expect(pub.replyFacebookComment).not.toHaveBeenCalled();
+        expect(pub.privateReplyFacebook).not.toHaveBeenCalled();
+      });
+
+      it('skips the private reply for comments older than 7 days', async () => {
+        pub.replyFacebookComment.mockClear();
+        pub.privateReplyFacebook.mockClear();
+        await deliver(feed('fb-old', 'add', { created_time: Math.floor(Date.now() / 1000) - 8 * 86_400 }), 'test-app-secret');
+        expect(pub.replyFacebookComment).toHaveBeenCalledTimes(1);
+        expect(pub.privateReplyFacebook).not.toHaveBeenCalled();
+      });
+    });
+  });
+
+  describe('scheduling', () => {
+    it('rejects posts for a channel the account can\'t publish to, and non-JPEG images for Instagram', async () => {
+      const igAccount = (await http().get('/accounts').set('Authorization', `Bearer ${bob}`).expect(200)).body.find((a: any) => a.provider === 'instagram').id;
+      const at = new Date(Date.now() + 3_600_000).toISOString();
+      await http().post('/posts').set('Authorization', `Bearer ${bob}`).send({ accountId: igAccount, platform: 'threads', mediaUrls: [], scheduledAt: at }).expect(400);
+      const png = await http().post('/posts').set('Authorization', `Bearer ${bob}`).send({ accountId: igAccount, platform: 'instagram', mediaUrls: ['https://cdn.example.com/a.png'], scheduledAt: at }).expect(400);
+      expect(png.body.message).toContain('JPEG');
+      await http().post('/posts').set('Authorization', `Bearer ${bob}`).send({ accountId: igAccount, platform: 'instagram', mediaUrls: ['https://cdn.example.com/a.jpg'], scheduledAt: at }).expect(201);
+    });
+
+    it('claims each due post so overlapping ticks publish it once', async () => {
+      const account = await prisma.socialAccount.findFirstOrThrow({ where: { externalId: 'ig-bob' } });
+      await prisma.scheduledPost.updateMany({ where: { status: 'SCHEDULED' }, data: { status: 'FAILED' } });
+      const post = await prisma.scheduledPost.create({ data: { accountId: account.id, platform: 'instagram', mediaType: 'IMAGE', mediaUrls: '[]', scheduledAt: new Date(Date.now() - 1000) } });
+      pub.publish.mockClear();
+      const scheduler = app.get(SchedulerService);
+      await Promise.all([scheduler.tick(), scheduler.tick(), scheduler.tick()]);
+      expect(pub.publish).toHaveBeenCalledTimes(1);
+      expect(pub.publish).toHaveBeenCalledWith(post.id);
+      expect((await prisma.scheduledPost.findUniqueOrThrow({ where: { id: post.id } })).status).toBe('PUBLISHING');
     });
   });
 });

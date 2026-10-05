@@ -33,6 +33,7 @@ export class CommentsController {
       if (body.dm) return this.pub.privateReplyInstagram(account.externalId, commentId, text, token);
       return this.pub.replyInstagramComment(commentId, text, token);
     }
+    if (body.dm) return this.pub.privateReplyFacebook(account.externalId, commentId, text, token);
     return this.pub.replyFacebookComment(commentId, text, token);
   }
 }

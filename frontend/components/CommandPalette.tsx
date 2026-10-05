@@ -21,6 +21,7 @@ const navigate: Action[] = [
   { id: 'pl', label: 'Planner', hint: 'Calendar', href: '/planner', icon: 'calendar', keywords: ['schedule', 'calendar'] },
   { id: 'id', label: 'Ideas', hint: 'AI content ideas', href: '/ideas', icon: 'bulb' },
   { id: 'hk', label: 'Hook library', hint: 'Opening lines', href: '/hooks', icon: 'sparkles' },
+  { id: 'pf', label: 'Pre-flight check', hint: 'Predict reactions before posting', href: '/preflight', icon: 'gauge', keywords: ['predict', 'review', 'check'] },
   { id: 'au', label: 'Automations', hint: 'Comment to DM', href: '/automations', icon: 'zap', keywords: ['rules', 'dm'] },
   { id: 'in', label: 'Inbox', hint: 'Comments', href: '/comments', icon: 'inbox', keywords: ['comments', 'reply'] },
   { id: 'co', label: 'Connections', hint: 'Channels', href: '/connect', icon: 'link', keywords: ['instagram', 'facebook', 'threads'] },

@@ -183,7 +183,7 @@ export default function Composer({ open, onOpenChange, accounts, accountsLoading
                 <button className="btn btn-ghost btn-sm" type="button" onClick={() => fileRef.current?.click()} disabled={uploading} aria-describedby="media-hint">
                   <Icon name="plus" size={14} /> {uploading ? 'Uploading…' : 'Add photos or video'}
                 </button>
-                <span className="form-hint" id="media-hint">JPG, PNG, WebP, GIF or MP4, up to 25 MB</span>
+                <span className="form-hint" id="media-hint">JPG, PNG, WebP, GIF or MP4, up to 100 MB</span>
               </div>
               {mediaList.length > 0 && (
                 <ul className="attach-grid" aria-label="Attached media">
@@ -214,6 +214,9 @@ export default function Composer({ open, onOpenChange, accounts, accountsLoading
             <div className="form-actions dialog-actions">
               {blocker && <span className="form-hint dialog-blocker" id="schedule-blocker">{blocker}</span>}
               <button className="btn btn-ghost" type="button" onClick={() => onOpenChange(false)}>Cancel</button>
+              <Link className="btn btn-ghost" href={`/preflight?${new URLSearchParams([...mediaList.filter((u) => u.includes('/media/')).map((u) => ['media', u]), ['caption', caption], ['platform', platform]]).toString()}`} onClick={() => onOpenChange(false)}>
+                <Icon name="gauge" size={15} /> Check before posting
+              </Link>
               <button className="btn" type="submit" disabled={saving || uploading || !!blocker} aria-describedby={blocker ? 'schedule-blocker' : undefined}>
                 <Icon name="calendar" size={15} /> {saving ? 'Scheduling…' : 'Schedule post'}
               </button>

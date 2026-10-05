@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma.service';
-import { BrandContext, ClaudeService, PLATFORMS } from './claude.service';
+import { BrandContext, AiService, PLATFORMS } from './ai.service';
 
 export type ProfileInput = { niche?: string; audience?: string; voice?: string; pillars?: unknown; platforms?: unknown; autopilot?: boolean; ideasPerRun?: number };
 
@@ -23,7 +23,7 @@ function cleanList(value: unknown, field: string): string[] {
 export class IdeasService {
   private readonly log = new Logger(IdeasService.name);
 
-  constructor(private prisma: PrismaService, private claude: ClaudeService) {}
+  constructor(private prisma: PrismaService, private ai: AiService) {}
 
   // ---- brand profile (one per user) ----
 
@@ -76,7 +76,7 @@ export class IdeasService {
       this.prisma.hook.findMany({ where: { userId, isFavorite: true }, orderBy: { usedCount: 'desc' }, take: 8, select: { text: true } }),
     ]);
     const brand: BrandContext = { niche: profile.niche, audience: profile.audience, voice: profile.voice, pillars: profile.pillars };
-    const ideas = await this.claude.generateIdeas({
+    const ideas = await this.ai.generateIdeas({
       brand,
       platforms: opts.platform ? [opts.platform] : profile.platforms,
       count,
@@ -119,7 +119,7 @@ export class IdeasService {
 
   @Cron(CronExpression.EVERY_DAY_AT_7AM)
   async autopilot() {
-    if (!this.claude.configured) return;
+    if (!this.ai.configured) return;
     const profiles = await this.prisma.brandProfile.findMany({ where: { autopilot: true }, orderBy: { createdAt: 'asc' } });
     for (const profile of profiles) {
       if (profile.lastAutopilotAt && Date.now() - profile.lastAutopilotAt.getTime() < AUTOPILOT_GAP_MS) continue;

@@ -22,6 +22,7 @@ const primaryLinks = [
   { href: '/planner', label: 'Planner', icon: 'calendar' as const },
   { href: '/ideas', label: 'Ideas', icon: 'bulb' as const },
   { href: '/hooks', label: 'Hook library', icon: 'sparkles' as const },
+  { href: '/preflight', label: 'Pre-flight check', icon: 'gauge' as const },
   { href: '/automations', label: 'Automations', icon: 'zap' as const },
   { href: '/comments', label: 'Inbox', icon: 'inbox' as const },
 ];
@@ -36,6 +37,7 @@ const titles: Record<string, { eyebrow: string; title: string }> = {
   '/planner': { eyebrow: 'Workspace', title: 'Planner' },
   '/ideas': { eyebrow: 'Create', title: 'Ideas' },
   '/hooks': { eyebrow: 'Create', title: 'Hook library' },
+  '/preflight': { eyebrow: 'Create', title: 'Pre-flight check' },
   '/automations': { eyebrow: 'Engagement', title: 'Automations' },
   '/comments': { eyebrow: 'Engagement', title: 'Inbox' },
   '/connect': { eyebrow: 'Manage', title: 'Connections' },

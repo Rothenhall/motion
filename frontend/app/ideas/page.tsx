@@ -120,7 +120,7 @@ export default function Ideas() {
       </div>
     </section>
 
-    {!aiReady && <div className="notice notice-warning" role="status"><Icon name="alert" size={15} /> AI is not set up yet. Add ANTHROPIC_API_KEY to backend/.env and restart the backend.</div>}
+    {!aiReady && <div className="notice notice-warning" role="status"><Icon name="alert" size={15} /> AI is not set up yet. Add OPENROUTER_API_KEY to backend/.env and restart the backend.</div>}
     {loadError && <div className="notice notice-error" role="alert"><Icon name="alert" size={15} /> {loadError}</div>}
 
     <div className="split-layout">

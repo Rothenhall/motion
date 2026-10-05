@@ -8,7 +8,8 @@ COPY . .
 RUN npx prisma generate && npm run build && npm prune --omit=dev
 
 FROM node:22-alpine
-RUN apk add --no-cache openssl
+# ffmpeg: frame sampling and scene cuts for pre-flight checks.
+RUN apk add --no-cache openssl ffmpeg
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /app/node_modules ./node_modules

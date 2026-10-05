@@ -123,7 +123,7 @@ export default function Comments() {
             <label className="field-label" htmlFor="comment-text">Your message <span className={`char-count ${form.text.length >= REPLY_LIMIT ? 'over' : ''}`}>{form.text.length}/{REPLY_LIMIT}</span></label>
             <textarea ref={textRef} id="comment-text" rows={4} placeholder="Write something thoughtful…" value={form.text} onChange={(event) => setForm({ ...form, text: event.target.value.slice(0, REPLY_LIMIT) })} required />
           </div>
-          <label className="check-row"><input type="checkbox" checked={form.dm} onChange={(event) => setForm({ ...form, dm: event.target.checked })} /><span><strong>Send as a private message</strong><small>Instagram private replies stay between you and the commenter.</small></span></label>
+          <label className="check-row"><input type="checkbox" checked={form.dm} onChange={(event) => setForm({ ...form, dm: event.target.checked })} /><span><strong>Send as a private message</strong><small>Sends one private message to the commenter, within 7 days of their comment.</small></span></label>
           <div className="form-actions"><button className="btn" type="submit" disabled={sending || loading || !replyable.length}><Icon name="send" size={15} /> {sending ? 'Sending…' : form.dm ? 'Send private reply' : 'Post reply'}</button>{!replyable.length && !loading && <span className="form-hint">Connect Instagram or Facebook to reply.</span>}</div>
         </form>
       </section>

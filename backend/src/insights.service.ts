@@ -5,6 +5,7 @@ import type { SocialAccount } from '@prisma/client';
 import { PrismaService } from './prisma.service';
 import { MetaService } from './meta.service';
 import { decryptToken } from './auth/crypto';
+import { graphVersion } from './meta-config';
 
 const DAY = 86_400_000;
 const BACKFILL_DAYS = 30;
@@ -51,7 +52,7 @@ export class InsightsService {
   constructor(private prisma: PrismaService, private meta: MetaService) {}
 
   private v() {
-    return process.env.META_GRAPH_VERSION || 'v22.0';
+    return graphVersion();
   }
 
   @Cron('15 */6 * * *')
