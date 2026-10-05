@@ -194,7 +194,7 @@ export default function Home() {
               <button className="btn btn-ghost btn-sm" type="button" onClick={() => fileRef.current?.click()} disabled={uploading}>
                 <Icon name="plus" size={14} /> {uploading ? 'Uploading…' : 'Add photos / video'}
               </button>
-              <span className="form-hint">JPG, PNG, WebP, GIF or MP4 · up to 25 MB — or paste a URL below</span>
+              <span className="form-hint">JPG, PNG, WebP, GIF or MP4 · up to 100 MB — or paste a URL below</span>
             </div>
             {uploadError && <div className="form-error" role="alert">{uploadError}</div>}
             {mediaList.length > 0 && (
@@ -213,6 +213,9 @@ export default function Home() {
               <button className="btn" type="submit" disabled={saving || uploading || loading || !data.accounts.length}>
                 <Icon name="calendar" size={15} /> {saving ? 'Scheduling…' : 'Schedule post'}
               </button>
+              <a className="btn btn-ghost" href={`/preflight?${new URLSearchParams([...mediaList.filter((u) => u.includes('/media/')).map((u) => ['media', u]), ['caption', form.caption], ['platform', form.platform]]).toString()}`}>
+                <Icon name="gauge" size={15} /> Check before posting
+              </a>
               <button className="btn btn-ghost" type="button" onClick={() => setComposerOpen(false)}>Cancel</button>
               {!data.accounts.length && !loading && <span className="form-error">Connect an account first to schedule.</span>}
             </div>

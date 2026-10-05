@@ -17,6 +17,7 @@ model User {
   brandProfile BrandProfile?
   ideas        ContentIdea[]
   hooks        Hook[]
+  checks       ContentCheck[]
 }
 
 model SocialAccount {
@@ -176,4 +177,35 @@ model Hook {
   createdAt  DateTime @default(now())
 
   @@index([userId, category])
+}
+
+// ---- Pre-flight check: predicted audience reaction before posting ----
+
+/// One piece of content checked before it is posted. Runs as a background job.
+model ContentCheck {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  groupId     String?   // versions uploaded together to compare
+  label       String?   // "Version A"
+  kind        String    // VIDEO | IMAGE | CAROUSEL | TEXT
+  platform    String    // instagram | facebook | threads
+  caption     String?
+  text        String?   // the post itself (TEXT) or the voiceover / on-screen script (VIDEO)
+  mediaUrls   String    @default("[]") // JSON array of /media/upload URLs
+  mediaHash   String?   // sha256 of the media files
+  status      String    @default("PENDING") // PENDING | RUNNING | DONE | FAILED
+  engine      String?   // AI_REVIEW | AUDIENCE_SIMULATION (TRIBE v2 + AI review)
+  signals     String?   // JSON: measured video facts and the audience simulation summary
+  report      String?   // JSON: the insights shown to the user
+  error       String?
+  attempts    Int       @default(0)
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@index([groupId])
 }

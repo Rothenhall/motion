@@ -1,0 +1,5 @@
+# GPU service. TRIBE v2 pins its own torch / numpy versions.
+tribev2 @ git+https://github.com/facebookresearch/tribev2.git
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9

@@ -103,7 +103,7 @@ export default function Ideas() {
       </div>
     </section>
 
-    {!aiReady && <div className="notice notice-error" role="alert"><Icon name="alert" size={15} /> AI is not set up yet. Add ANTHROPIC_API_KEY to backend/.env and restart the backend.</div>}
+    {!aiReady && <div className="notice notice-error" role="alert"><Icon name="alert" size={15} /> AI is not set up yet. Add OPENROUTER_API_KEY to backend/.env and restart the backend.</div>}
     {notice && <div className={`notice ${notice.kind === 'success' ? 'notice-success' : 'notice-error'}`} role="alert" aria-live="polite"><Icon name={notice.kind === 'success' ? 'check' : 'alert'} size={15} /> {notice.text}</div>}
 
     <div className="split-layout">

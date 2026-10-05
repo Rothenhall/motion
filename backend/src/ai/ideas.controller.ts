@@ -1,15 +1,15 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { IdeasService, ProfileInput } from './ideas.service';
-import { ClaudeService } from './claude.service';
+import { AiService } from './ai.service';
 import { AuthUser, CurrentUser } from '../auth/auth.guard';
 
 @Controller()
 export class IdeasController {
-  constructor(private ideas: IdeasService, private claude: ClaudeService) {}
+  constructor(private ideas: IdeasService, private ai: AiService) {}
 
   @Get('ai/status')
   status() {
-    return { configured: this.claude.configured, model: this.claude.model };
+    return { configured: this.ai.configured, model: this.ai.model };
   }
 
   @Get('brand-profile')

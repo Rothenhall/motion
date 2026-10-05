@@ -1,6 +1,7 @@
 # Local stack: Postgres + backend + frontend.
 #   docker compose up -d db          # just the database (run the apps with npm)
 #   docker compose up --build        # everything
+#   docker compose --profile gpu up  # also the TRIBE v2 audience simulation (NVIDIA GPU, ~32 GB VRAM)
 services:
   db:
     image: postgres:16-alpine
@@ -44,6 +45,25 @@ services:
     depends_on:
       - backend
 
+  # Optional TRIBE v2 service for pre-flight checks. Set TRIBE_SERVICE_URL=http://tribe:8000 and
+  # TRIBE_SERVICE_TOKEN in backend/.env to use it; HF_TOKEN must be approved for Llama 3.2-3B.
+  tribe:
+    profiles: ["gpu"]
+    build: ./tribe-service
+    environment:
+      HF_TOKEN: ${HF_TOKEN:-}
+      TRIBE_SERVICE_TOKEN: ${TRIBE_SERVICE_TOKEN:-}
+    volumes:
+      - tribe-cache:/cache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
 volumes:
   pgdata:
   uploads:
+  tribe-cache:

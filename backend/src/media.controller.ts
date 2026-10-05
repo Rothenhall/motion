@@ -5,7 +5,7 @@ import { existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { randomUUID } from 'crypto';
 
-const UPLOAD_DIR = join(process.cwd(), 'uploads');
+export const UPLOAD_DIR = join(process.cwd(), 'uploads');
 if (!existsSync(UPLOAD_DIR)) mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const ALLOWED = new Set([
@@ -26,7 +26,8 @@ export class MediaController {
           cb(null, `${Date.now()}-${randomUUID().slice(0, 8)}.${ext}`);
         },
       }),
-      limits: { fileSize: 25 * 1024 * 1024 },
+      // Phone-recorded reels are often 30-80 MB; matches the audience simulation's own limit.
+      limits: { fileSize: 100 * 1024 * 1024 },
       fileFilter: (_req, file, cb) => {
         if (!ALLOWED.has(file.mimetype)) {
           return cb(new BadRequestException('Only JPG, PNG, WebP, GIF or MP4 files are allowed.') as any, false);
