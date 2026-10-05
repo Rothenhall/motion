@@ -18,6 +18,7 @@ type IconName =
   | 'plus'
   | 'arrow-up-right'
   | 'arrow-right'
+  | 'arrow-left'
   | 'more'
   | 'clock'
   | 'check'
@@ -58,6 +59,7 @@ const paths: Record<IconName, React.ReactNode> = {
   plus: <><path d="M12 5v14M5 12h14" /></>,
   'arrow-up-right': <><path d="M7 17 17 7M8 7h9v9" /></>,
   'arrow-right': <><path d="M4 12h16M14 6l6 6-6 6" /></>,
+  'arrow-left': <><path d="M20 12H4M10 6l-6 6 6 6" /></>,
   more: <><circle cx="5" cy="12" r="1" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" /><circle cx="19" cy="12" r="1" fill="currentColor" stroke="none" /></>,
   clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
   check: <path d="m5 12 4.5 4.5L19 7" />,

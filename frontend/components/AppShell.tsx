@@ -114,7 +114,8 @@ function AccountMenu({ email, dark, onToggleTheme, variant }: { email: string | 
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const page = titles[pathname] || titles['/'];
+  // Sub-pages (e.g. /preflight/<id>) share their section's title.
+  const page = titles[pathname] || titles[`/${pathname.split('/')[1]}`] || titles['/'];
   const [navOpen, setNavOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [dark, setDark] = useState(false);

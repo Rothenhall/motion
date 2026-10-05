@@ -831,6 +831,38 @@ button.pf-time:hover { background: var(--brand-100); }
 .pf-rank-copy strong { color: var(--text-1); font-size: 13px; }
 .pf-rank-copy span { color: var(--text-2); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pf-rank-score { color: var(--text-1); font-family: var(--font-display); font-size: 18px; font-weight: 600; }
+/* Check list */
+.pf-table .pf-row { cursor: pointer; }
+.pf-row-title { display: block; max-width: 520px; color: var(--text-1); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pf-row-title:hover { color: var(--brand-700); }
+.pf-row-detail { display: block; max-width: 520px; margin-top: 2px; color: var(--text-3); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pf-row-date { white-space: nowrap; color: var(--text-2); }
+.pf-row-actions { width: 1%; text-align: right; }
+.pf-dialog { max-height: calc(100vh - 2rem); overflow-y: auto; }
+/* Detail */
+.pf-detail-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.pf-detail-meta { display: flex; align-items: center; gap: 10px; color: var(--text-2); font-size: 12.5px; }
+.pf-media { display: grid; gap: 12px; margin-bottom: 4px; }
+.pf-media-split { grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); align-items: start; }
+.pf-media-cell { margin: 0; min-width: 0; }
+.pf-media-label { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin-bottom: 6px; color: var(--text-1); font-size: 13px; font-weight: 700; }
+.pf-media-label span { color: var(--text-3); font-size: 11.5px; font-weight: 500; }
+.pf-media-split .pf-video { height: 380px; max-height: none; object-fit: contain; }
+.pf-brain { display: grid; gap: 8px; }
+.pf-brain-canvas { position: relative; height: 380px; border-radius: 12px; background: radial-gradient(circle at 50% 40%, #1f2433, #0b0d14); overflow: hidden; cursor: grab; touch-action: none; }
+.pf-brain-canvas:active { cursor: grabbing; }
+.pf-brain-canvas canvas { display: block; width: 100% !important; height: 100% !important; }
+.pf-brain-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pf-brain-time { color: var(--text-2); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.pf-brain-legend { display: flex; align-items: center; gap: 8px; color: var(--text-3); font-size: 11.5px; }
+.pf-brain-legend i { width: 48px; height: 8px; flex: 0 0 auto; border-radius: 4px; background: linear-gradient(90deg, #9aa0ab, #c0392b, #f39c12, #fff3b0); }
+.pf-brain-empty { display: grid; align-content: center; justify-items: start; gap: 8px; min-height: 380px; padding: 20px; border: 1px dashed var(--border-strong); border-radius: 12px; color: var(--text-2); font-size: 12.5px; }
+.pf-brain-empty strong { color: var(--text-1); font-size: 13.5px; }
+@media (max-width: 900px) {
+  .pf-media-split { grid-template-columns: 1fr; }
+  .pf-media-split .pf-video, .pf-brain-canvas { height: 320px; }
+  .pf-brain-empty { min-height: 220px; }
+}
 @media (max-width: 620px) {
   .pf-body { padding: 16px 14px; }
   .pf-ranking { padding: 12px 14px 0; }
