@@ -42,6 +42,14 @@ ngrok http 3001
 # set META_WEBHOOK_CALLBACK_URL=https://<ngrok>/webhooks/meta
 ```
 
+## Frontend UI kit
+
+The frontend uses [shadcn/ui](https://ui.shadcn.com) on Tailwind CSS v4 for interactive parts (dialogs, the mobile drawer, menus, tabs, switches, toasts, the ⌘K palette). Add more with `npx shadcn@latest add <component>` from `frontend/`; they land in `frontend/components/ui/`.
+
+- shadcn's colour names (`primary`, `muted`, `border`, …) are mapped to Motion's own tokens in `frontend/app/globals.css`, so new components match both themes with no extra styling.
+- Tailwind preflight is off and the hand-written styles live in a `legacy` layer below utilities, so existing pages render as before and utilities win where both apply.
+- Use `useConfirm()` (`components/ConfirmDialog.tsx`) instead of `window.confirm`, `toast` from `sonner` for action results, and `lib/format.ts` for channel, format and status labels.
+
 ## AI ideas and hook library
 
 `/ideas` generates post ideas (hook, angle, format, caption, hashtags) from a brand profile, and `/hooks` is a
