@@ -186,14 +186,14 @@ export class AiService {
         // Only route to providers that honour the JSON schema.
         provider: { require_parameters: true },
       });
-      const json = parseJson(text);
+      const json = text ? parseJson(text) : undefined;
       const parsed = schema.safeParse(json);
       if (parsed.success) return parsed.data;
-      const why = json === undefined ? `not JSON, starts: ${JSON.stringify(text.slice(0, 200))}` : parsed.error.message.slice(0, 300);
+      const why = !text ? 'empty reply' : json === undefined ? `not JSON, starts: ${JSON.stringify(text.slice(0, 200))}` : parsed.error.message.slice(0, 300);
       this.log.warn(`AI reply does not match ${name} (attempt ${attempt}): ${why}`);
       if (attempt >= 2) throw new BadGatewayException('The AI returned an unexpected response. Try again.');
-      // Keep the work from the first reply and ask only for the conversion.
-      messages.push({ role: 'assistant', content: text }, { role: 'user', content: `That reply was not valid JSON for the schema. Rewrite the same content as only the JSON object. ${format}` });
+      // An empty reply is simply asked again; otherwise keep the work from the first reply and ask only for the conversion.
+      if (text) messages.push({ role: 'assistant', content: text }, { role: 'user', content: `That reply was not valid JSON for the schema. Rewrite the same content as only the JSON object. ${format}` });
     }
   }
 
@@ -223,7 +223,11 @@ export class AiService {
     if (choice?.finish_reason === 'length') throw new BadGatewayException('The AI response was cut off. Ask for fewer items.');
     if (choice?.message?.refusal) throw new BadGatewayException('The AI declined this request. Try rephrasing the topic.');
     const content = choice?.message?.content;
-    if (typeof content !== 'string' || !content.trim()) throw new BadGatewayException('The AI returned an empty response. Try again.');
+    if (typeof content !== 'string' || !content.trim()) {
+      // Seen with large image prompts: the provider finishes with no content. The caller retries.
+      this.log.warn(`OpenRouter returned no content (provider ${data?.provider ?? '?'}, finish ${choice?.finish_reason ?? '?'}, usage ${JSON.stringify(data?.usage ?? {})})`);
+      return '';
+    }
     return content;
   }
 }
