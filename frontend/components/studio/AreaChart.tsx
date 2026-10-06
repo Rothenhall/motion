@@ -30,7 +30,7 @@ export default function AreaChart({ series, id = 'area' }: { series: TrendPoint[
       <path d={line('views', maxV)} fill="none" stroke="#fff" strokeWidth="2" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
       <circle cx={px} cy={y(series[peak].views, maxV)} r="4" fill="#fff" />
       <text x={Math.min(Math.max(px, 30), W - 30)} y={Math.max(y(series[peak].views, maxV) - 9, 12)} textAnchor="middle" fill="#fff" fontSize="11" fontWeight="650">{compactNumber(series[peak].views)}</text>
-      {labelAt.map((i, k) => <text key={i} x={x(i)} y={H - 6} fill="#fff" fillOpacity=".55" fontSize="10.5" textAnchor={k === 0 ? 'start' : k === 2 ? 'end' : 'middle'}>{shortDate(series[i].date)}</text>)}
+      {labelAt.map((i, k) => <text key={i} x={x(i)} y={H - 6} fill="#fff" fillOpacity=".55" fontSize="11" textAnchor={k === 0 ? 'start' : k === 2 ? 'end' : 'middle'}>{shortDate(series[i].date)}</text>)}
     </svg>
   );
 }

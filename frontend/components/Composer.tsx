@@ -256,7 +256,7 @@ export default function Composer({ open, onOpenChange, accounts, accountsLoading
       <DialogContent className="composer-dialog max-h-[calc(100dvh-32px)] overflow-y-auto sm:max-w-[1040px]">
         <DialogHeader>
           <DialogTitle className="dialog-title">Create a post</DialogTitle>
-          <DialogDescription>Write on the left and see how it will look on each platform on the right.</DialogDescription>
+          <DialogDescription>Write your post and see how it will look on each platform.</DialogDescription>
         </DialogHeader>
 
         {!accountsLoading && !accounts.length ? (

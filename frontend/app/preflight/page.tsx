@@ -86,7 +86,7 @@ export default function PreflightList() {
 
   return <div>
     <section className="page-intro">
-      <div><div className="eyebrow">Before you post</div><h2>Pre-flight check</h2><p>See how people will likely react to a reel before it goes live: predicted attention, a simulated brain response and the fixes to make.</p></div>
+      <div><div className="eyebrow">Before you post</div><h1>Pre-flight check</h1><p>See how people will likely react to a reel before it goes live: predicted attention, a simulated brain response and the fixes to make.</p></div>
       <div className="page-intro-actions">
         <span className={status.audienceSimulation ? 'live-pill' : 'status-pill status-draft'} role="status">{status.audienceSimulation && <i aria-hidden="true" />}{status.audienceSimulation ? 'Audience simulation on' : 'AI review'}</span>
         <button className="btn" type="button" onClick={() => { setPrefill(null); setDialogOpen(true); }} disabled={!status.ai}><Icon name="plus" size={15} /> New reel check</button>
@@ -98,7 +98,7 @@ export default function PreflightList() {
     <NewCheckDialog open={dialogOpen} onOpenChange={setDialogOpen} onQueued={load} aiReady={status.ai} prefill={prefill} />
 
     <section className="card data-card" aria-labelledby="pf-list-title">
-      <div className="card-header"><div><h3 className="card-title" id="pf-list-title">Your checks <span className="list-count">{list.length}</span></h3><p className="card-subtitle">Click a completed check to see the reel, the brain view, the verdict and the fixes.</p></div></div>
+      <div className="card-header"><div><h2 className="card-title" id="pf-list-title">Your checks <span className="list-count">{list.length}</span></h2><p className="card-subtitle">Click a completed check to see the reel, the brain view, the verdict and the fixes.</p></div></div>
       {checks === null ? <div className="empty-state">Loading…</div> : list.length === 0 ? <div className="empty-state">
         <div className="empty-icon"><Icon name="gauge" size={18} /></div>
         <strong>No checks yet</strong>

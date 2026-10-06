@@ -39,6 +39,8 @@ const titles: Record<string, { eyebrow: string; title: string }> = {
   '/': { eyebrow: 'Studio', title: 'Overview' },
   '/planner': { eyebrow: 'Studio', title: 'Planner' },
   '/lab': { eyebrow: 'Studio', title: 'Content Lab' },
+  '/ideas': { eyebrow: 'Studio', title: 'Content Lab' }, // these two only redirect to /lab
+  '/hooks': { eyebrow: 'Studio', title: 'Content Lab' },
   '/preflight': { eyebrow: 'Studio', title: 'Pre-flight check' },
   '/automations': { eyebrow: 'Engage', title: 'Automations' },
   '/comments': { eyebrow: 'Engage', title: 'Inbox' },
@@ -119,7 +121,7 @@ function AccountMenu({ email, dark, onToggleTheme, variant }: { email: string | 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   // Sub-pages (e.g. /preflight/<id>) share their section's title.
-  const page = titles[pathname] || titles[`/${pathname.split('/')[1]}`] || titles['/'];
+  const page = titles[pathname] || titles[`/${pathname.split('/')[1]}`] || { eyebrow: 'Motion', title: 'Page not found' };
   const [navOpen, setNavOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [dark, setDark] = useState(false);
