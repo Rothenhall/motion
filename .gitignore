@@ -8,3 +8,7 @@ dist/
 *.db-journal
 *.tsbuildinfo
 backend/uploads/
+
+# scratch captures from design work
+/brain_simulation_*.mp4
+/preflight_detail_preview.jpg

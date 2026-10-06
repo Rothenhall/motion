@@ -1,0 +1,983 @@
+<title>Motion Studio Redesign</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Montserrat:wght@400..750&display=swap">
+<style>
+/* Layout: a single editorial column for the argument; screen mockups break wider and scroll sideways on phones. */
+:root {
+  --canvas: #f6f6f5;
+  --surface: #fefefe;
+  --sunk: #f0f0f1;
+  --line: #e7e7e8;
+  --line-strong: #d4d3d6;
+  --ink: #313337;
+  --ink-2: #5b5e62;
+  --ink-3: #6e7175;
+  --hero: #2b2d31;
+  --hero-ink: #f4f4f5;
+  --on-ink: #fefefe;
+  --good: #2f7a52;
+  --warn: #9a5b0b;
+  --bad: #b3261e;
+  --good-bg: #e8f1ec;
+  --warn-bg: #f6eddf;
+  --bad-bg: #f8e8e7;
+  --shadow: 0 1px 3px rgba(49,51,55,.05), 0 6px 18px rgba(49,51,55,.05);
+  --shadow-lg: 0 18px 50px rgba(49,51,55,.12), 0 2px 8px rgba(49,51,55,.05);
+  --serif: "Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --sans: "Montserrat", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --ease: cubic-bezier(.22, 1, .36, 1);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --canvas: #18191b; --surface: #232528; --sunk: #1d1e21; --line: #33353a; --line-strong: #44464b;
+    --ink: #f2f2f3; --ink-2: #b6b8bc; --ink-3: #9a9ca1; --hero: #0f1012; --hero-ink: #f4f4f5; --on-ink: #232528;
+    --good: #5fc08a; --warn: #e0a24a; --bad: #ef8079;
+    --good-bg: rgba(95,192,138,.14); --warn-bg: rgba(224,162,74,.14); --bad-bg: rgba(239,128,121,.14);
+    --shadow: 0 1px 2px rgba(0,0,0,.35), 0 8px 24px rgba(0,0,0,.25);
+    --shadow-lg: 0 20px 50px rgba(0,0,0,.45);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --canvas: #18191b; --surface: #232528; --sunk: #1d1e21; --line: #33353a; --line-strong: #44464b;
+  --ink: #f2f2f3; --ink-2: #b6b8bc; --ink-3: #9a9ca1; --hero: #0f1012; --hero-ink: #f4f4f5; --on-ink: #232528;
+  --good: #5fc08a; --warn: #e0a24a; --bad: #ef8079;
+  --good-bg: rgba(95,192,138,.14); --warn-bg: rgba(224,162,74,.14); --bad-bg: rgba(239,128,121,.14);
+  --shadow: 0 1px 2px rgba(0,0,0,.35), 0 8px 24px rgba(0,0,0,.25);
+  --shadow-lg: 0 20px 50px rgba(0,0,0,.45);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--canvas); color: var(--ink);
+  font-family: var(--sans); font-size: 15px; line-height: 1.65; font-weight: 425;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1120px; margin: 0 auto; padding-inline: 24px; padding-block: 0 96px; }
+.col { max-width: 720px; }
+h1, h2, h3 { font-family: var(--serif); font-weight: 600; letter-spacing: -.005em; line-height: 1.08; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(44px, 7vw, 76px); }
+h2 { font-size: clamp(32px, 4.4vw, 46px); }
+h3 { font-size: 26px; }
+p { margin: 0; }
+a { color: inherit; text-underline-offset: 3px; }
+.eyebrow { font-size: 11.5px; font-weight: 625; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); display: flex; align-items: center; gap: 10px; }
+.eyebrow::before { content: ""; width: 18px; height: 1.5px; background: currentColor; }
+.lede { font-size: 18px; color: var(--ink-2); max-width: 62ch; }
+.muted { color: var(--ink-2); }
+section { padding-block: 72px 0; }
+.sec-head { display: grid; gap: 14px; margin-bottom: 32px; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; border-radius: 6px; }
+
+/* Masthead */
+.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; background: color-mix(in oklab, var(--canvas) 88%, transparent); backdrop-filter: blur(12px); border-bottom: 1px solid var(--line); }
+.top-in { max-width: 1120px; margin: 0 auto; padding-inline: 24px; height: 56px; display: flex; align-items: center; gap: 18px; }
+.mark { font-family: var(--serif); font-weight: 700; letter-spacing: .1em; font-size: 19px; display: flex; align-items: center; gap: 9px; white-space: nowrap; }
+.mark i { width: 22px; height: 22px; border-radius: 7px; background: var(--ink); display: inline-block; }
+.top nav { display: flex; gap: 4px; overflow-x: auto; margin-left: auto; scrollbar-width: none; }
+.top nav a { font-size: 12.5px; font-weight: 525; color: var(--ink-2); text-decoration: none; padding: 6px 10px; border-radius: 8px; white-space: nowrap; }
+.top nav a:hover { background: var(--sunk); color: var(--ink); }
+
+.hero { padding-block: 72px 8px; display: grid; gap: 26px; }
+.hero h1 em { font-style: italic; font-weight: 500; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 22px; font-size: 13px; color: var(--ink-3); }
+.meta b { color: var(--ink); font-weight: 625; }
+
+/* Diagnosis */
+.diag { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+.diag div { background: var(--surface); padding: 22px; display: grid; gap: 8px; align-content: start; }
+.diag strong { font-size: 15px; font-weight: 650; }
+.diag p { font-size: 14px; color: var(--ink-2); }
+
+/* Research */
+.research { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.ref { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 22px; display: grid; gap: 12px; align-content: start; box-shadow: var(--shadow); }
+.ref-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.ref-head h3 { font-size: 24px; }
+.ref-head span { font-size: 11px; font-weight: 625; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); white-space: nowrap; }
+.ref p { font-size: 14px; color: var(--ink-2); }
+.take { border-top: 1px solid var(--line); padding-top: 12px; font-size: 13.5px; }
+.take b { font-weight: 650; }
+
+/* Principles */
+.principles { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 28px 32px; }
+.principle { display: grid; gap: 8px; align-content: start; }
+.principle h3 { font-size: 28px; }
+.principle p { font-size: 14.5px; color: var(--ink-2); }
+
+/* Screen sections */
+.screen { padding-block: 80px 0; }
+.screen-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 16px 32px; margin-bottom: 24px; }
+.screen-head .tag { font-size: 12px; color: var(--ink-3); text-align: right; }
+.screen-head .tag b { color: var(--ink); font-weight: 600; }
+.notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 18px 28px; margin-top: 22px; }
+.note { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 10px; font-size: 14px; color: var(--ink-2); }
+.note b { color: var(--ink); font-weight: 650; display: block; }
+.note i { width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--line-strong); display: grid; place-items: center; font-style: normal; font-size: 11px; font-weight: 700; color: var(--ink); }
+
+/* ——— Mockup system ——— */
+.mock-scroll { overflow-x: auto; border-radius: 18px; box-shadow: var(--shadow-lg); }
+.app { min-width: 900px; display: grid; grid-template-columns: 168px minmax(0, 1fr); background: var(--canvas); border: 1px solid var(--line); border-radius: 18px; overflow: hidden; font-size: 12px; line-height: 1.45; }
+.side { background: var(--surface); border-right: 1px solid var(--line); padding: 16px 10px; display: flex; flex-direction: column; gap: 2px; }
+.side .mark { font-size: 15px; padding: 0 8px 14px; }
+.side .mark i { width: 18px; height: 18px; border-radius: 6px; }
+.side .lbl { font-size: 9px; font-weight: 650; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); padding: 10px 8px 4px; }
+.side .it { padding: 6px 8px; border-radius: 7px; color: var(--ink-2); font-weight: 500; display: flex; align-items: center; gap: 8px; }
+.side .it::before { content: ""; width: 12px; height: 12px; border: 1.5px solid currentColor; border-radius: 3.5px; opacity: .55; }
+.side .it.on { background: var(--sunk); color: var(--ink); font-weight: 650; box-shadow: inset 2px 0 0 var(--ink); }
+.side .it .k { margin-left: auto; font-size: 9.5px; padding: 0 5px; border-radius: 5px; background: var(--ink); color: var(--on-ink); font-weight: 650; }
+.main { padding: 18px 20px 22px; display: grid; gap: 14px; align-content: start; min-width: 0; }
+.bar { display: flex; align-items: center; gap: 10px; }
+.crumb { font-size: 11px; color: var(--ink-3); font-weight: 600; }
+.ptitle { font-family: var(--serif); font-size: 18px; font-weight: 600; }
+.search { margin-left: auto; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--ink-3); min-width: 220px; font-size: 11px; }
+.search kbd { margin-left: auto; font-family: var(--sans); font-size: 9.5px; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: 13px; padding: 13px 14px; box-shadow: var(--shadow); min-width: 0; }
+.tile-t { font-size: 10px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.big { font-size: 26px; font-weight: 650; letter-spacing: -.03em; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.chip { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 600; border: 1px solid var(--line); background: var(--surface); color: var(--ink-2); white-space: nowrap; }
+.chip.dark { background: var(--ink); color: var(--on-ink); border-color: var(--ink); }
+.chip.good { color: var(--good); background: var(--good-bg); border-color: transparent; }
+.chip.warn { color: var(--warn); background: var(--warn-bg); border-color: transparent; }
+.chip.bad { color: var(--bad); background: var(--bad-bg); border-color: transparent; }
+.btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 8px; background: var(--ink); color: var(--on-ink); font-weight: 650; font-size: 11px; white-space: nowrap; }
+.btn.ghost { background: var(--surface); color: var(--ink); border: 1px solid var(--line-strong); }
+.ai { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 5px; background: var(--ink); color: var(--on-ink); font-size: 9px; font-weight: 700; flex: 0 0 auto; }
+.insight { display: flex; gap: 8px; align-items: flex-start; font-size: 11px; color: var(--ink-2); }
+.insight b { color: var(--ink); font-weight: 650; }
+
+/* Thumbnails: stand-ins for real post media */
+.th { border-radius: 9px; position: relative; overflow: hidden; aspect-ratio: 4 / 5; background: var(--g); }
+.th.sq { aspect-ratio: 1; }
+.th.wide { aspect-ratio: 16 / 9; }
+.th::after { content: ""; position: absolute; inset: 0; background: radial-gradient(120% 80% at 80% 0%, rgba(255,255,255,.28), transparent 55%); }
+.th .play { position: absolute; left: 7px; bottom: 7px; width: 16px; height: 16px; border-radius: 50%; background: rgba(255,255,255,.88); z-index: 1; }
+.th .play::before { content: ""; position: absolute; left: 6px; top: 4.5px; border-left: 6px solid #313337; border-top: 3.5px solid transparent; border-bottom: 3.5px solid transparent; }
+.th .pf { position: absolute; right: 6px; top: 6px; z-index: 1; font-size: 8.5px; font-weight: 700; color: #fff; background: rgba(0,0,0,.35); border-radius: 4px; padding: 1px 4px; letter-spacing: .04em; }
+.g1 { --g: linear-gradient(155deg, #cdb9a5, #8a6f5c); }
+.g2 { --g: linear-gradient(155deg, #a8b8ad, #546659); }
+.g3 { --g: linear-gradient(155deg, #bcc3cf, #5c687c); }
+.g4 { --g: linear-gradient(155deg, #dcc8a2, #a3824c); }
+.g5 { --g: linear-gradient(155deg, #b3a3b8, #5c4c64); }
+.g6 { --g: linear-gradient(155deg, #c9ccc6, #767d74); }
+.g7 { --g: linear-gradient(155deg, #d6a99a, #8f5446); }
+.g8 { --g: linear-gradient(155deg, #9fb2be, #3f5563); }
+.pl { display: inline-grid; place-items: center; width: 17px; height: 17px; border-radius: 5px; font-size: 7.5px; font-weight: 750; letter-spacing: .02em; background: var(--sunk); color: var(--ink-2); border: 1px solid var(--line); flex: 0 0 auto; }
+
+/* Overview mock */
+.brief { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: end; }
+.brief h4 { font-family: var(--serif); font-size: 30px; font-weight: 600; margin: 2px 0 0; line-height: 1.05; }
+.brief .e { font-size: 9.5px; font-weight: 650; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); }
+.todayline { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); font-size: 12px; color: var(--ink-2); }
+.todayline b { color: var(--ink); font-weight: 650; }
+.todayline .acts { margin-left: auto; display: flex; gap: 6px; }
+.bento { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 12px; }
+.hero-t { grid-column: span 5; grid-row: span 2; background: radial-gradient(120% 90% at 100% 0%, rgba(255,255,255,.09), transparent 55%), var(--hero); color: var(--hero-ink); border: 0; display: grid; gap: 8px; align-content: start; }
+.hero-t .tile-t { color: rgba(244,244,245,.6); }
+.hero-t .big { font-size: 40px; }
+.hero-t .sub { font-size: 11px; color: rgba(244,244,245,.7); }
+.hero-t svg { width: 100%; height: 110px; display: block; margin-top: 4px; }
+.next-t { grid-column: span 3; grid-row: span 2; display: grid; gap: 10px; align-content: start; }
+.phone { border-radius: 18px; border: 5px solid var(--ink); background: var(--ink); overflow: hidden; width: 100%; max-width: 150px; margin: 0 auto; }
+.phone .th { border-radius: 12px; aspect-ratio: 9 / 15; }
+.phone .cap { position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 1; color: #fff; font-size: 8.5px; line-height: 1.35; font-weight: 600; text-shadow: 0 1px 4px rgba(0,0,0,.35); }
+.stat-t { grid-column: span 4; display: grid; gap: 4px; }
+.spark { width: 100%; height: 26px; display: block; }
+.week-t { grid-column: span 12; }
+.week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+.day { border: 1px solid var(--line); border-radius: 10px; padding: 7px; display: grid; gap: 6px; align-content: start; min-height: 96px; background: var(--canvas); }
+.day.today { border-color: var(--ink); background: var(--surface); }
+.day .d { font-size: 9.5px; font-weight: 650; color: var(--ink-3); display: flex; justify-content: space-between; }
+.day.today .d { color: var(--ink); }
+.day .th { aspect-ratio: 16 / 10; }
+.best { font-size: 8.5px; font-weight: 650; color: var(--good); }
+.top-t { grid-column: span 12; }
+.gallery { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }
+.gpost { display: grid; gap: 5px; }
+.gpost .m { display: flex; justify-content: space-between; font-size: 10px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.gpost .m b { color: var(--ink); font-weight: 650; }
+
+/* Planner mock */
+.ptool { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--surface); }
+.seg span { padding: 4px 10px; font-size: 10.5px; font-weight: 600; color: var(--ink-2); }
+.seg span.on { background: var(--ink); color: var(--on-ink); }
+.plan { display: grid; grid-template-columns: minmax(0, 1fr) 210px; gap: 12px; }
+.cal { display: grid; grid-template-columns: 34px repeat(7, minmax(0, 1fr)); background: var(--surface); border: 1px solid var(--line); border-radius: 13px; overflow: hidden; }
+.cal .h { font-size: 9.5px; font-weight: 650; color: var(--ink-3); padding: 7px 6px; border-bottom: 1px solid var(--line); text-transform: uppercase; letter-spacing: .06em; }
+.cal .h.today { color: var(--ink); }
+.cal .t { font-size: 9px; color: var(--ink-3); padding: 4px 4px 0; border-top: 1px solid var(--line); text-align: right; font-variant-numeric: tabular-nums; }
+.cal .c { border-top: 1px solid var(--line); border-left: 1px solid var(--line); min-height: 52px; padding: 4px; position: relative; }
+.cal .c.hot { background: color-mix(in oklab, var(--good) 9%, transparent); }
+.cal .c.hot::after { content: "best"; position: absolute; right: 4px; top: 3px; font-size: 7.5px; font-weight: 700; color: var(--good); letter-spacing: .04em; text-transform: uppercase; }
+.ev { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 5px; align-items: center; padding: 3px; border-radius: 7px; background: var(--surface); border: 1px solid var(--line-strong); box-shadow: var(--shadow); font-size: 9.5px; line-height: 1.25; }
+.ev .th { aspect-ratio: 1; border-radius: 5px; }
+.ev b { font-weight: 650; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev span { color: var(--ink-3); font-size: 8.5px; }
+.ev.drag { transform: rotate(-2deg) translateY(-3px); box-shadow: var(--shadow-lg); border-color: var(--ink); }
+.ev.warn { border-color: var(--warn); }
+.feed { background: var(--surface); border: 1px solid var(--line); border-radius: 13px; padding: 12px; display: grid; gap: 10px; align-content: start; }
+.feed .prof { display: flex; align-items: center; gap: 8px; font-size: 10.5px; }
+.feed .av { width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(145deg, #5b5e62, #313337); }
+.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; }
+.grid3 .th { border-radius: 3px; aspect-ratio: 4 / 5; }
+.grid3 .th.new { outline: 2px solid var(--ink); outline-offset: -2px; }
+
+/* Content Lab mock */
+.prompt { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 13px; background: var(--surface); border: 1px solid var(--line-strong); box-shadow: var(--shadow); font-size: 12px; color: var(--ink-3); }
+.prompt .acts { margin-left: auto; display: flex; gap: 6px; }
+.board { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.lane { background: var(--sunk); border-radius: 13px; padding: 9px; display: grid; gap: 8px; align-content: start; }
+.lane-h { display: flex; justify-content: space-between; align-items: center; font-size: 10.5px; font-weight: 650; padding: 2px 3px; }
+.lane-h span { color: var(--ink-3); font-weight: 600; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 11px; padding: 9px; display: grid; gap: 7px; box-shadow: var(--shadow); }
+.card h5 { margin: 0; font-family: var(--serif); font-size: 15px; font-weight: 600; line-height: 1.2; }
+.card .hook { font-size: 10px; color: var(--ink-2); border-left: 2px solid var(--line-strong); padding-left: 7px; }
+.card .ft { display: flex; align-items: center; gap: 5px; }
+.card .ft .score { margin-left: auto; font-size: 10px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.card .th { aspect-ratio: 16 / 8; }
+
+/* Composer studio mock */
+.studio { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 14px; }
+.editor { display: grid; gap: 10px; align-content: start; }
+.fld { display: grid; gap: 5px; }
+.fld label { font-size: 9.5px; font-weight: 650; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }
+.chans { display: flex; gap: 6px; flex-wrap: wrap; }
+.chan { display: flex; align-items: center; gap: 6px; padding: 5px 9px 5px 5px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--surface); font-size: 10.5px; font-weight: 600; }
+.chan.on { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.cap-box { background: var(--surface); border: 1px solid var(--ink); border-radius: 10px; padding: 10px; font-size: 12px; line-height: 1.55; box-shadow: 0 0 0 3px color-mix(in oklab, var(--ink) 8%, transparent); }
+.cap-box .ghost { color: var(--ink-3); }
+.cap-box .cursor { display: inline-block; width: 1.5px; height: 13px; background: var(--ink); vertical-align: -2px; margin: 0 1px; }
+.suggest { margin-top: 8px; display: grid; gap: 5px; border-top: 1px dashed var(--line-strong); padding-top: 8px; }
+.suggest div { display: flex; gap: 7px; align-items: center; font-size: 10.5px; color: var(--ink-2); }
+.suggest div b { font-family: var(--serif); font-size: 13px; color: var(--ink); font-weight: 600; }
+.media { display: flex; gap: 6px; }
+.media .th { width: 54px; aspect-ratio: 4 / 5; }
+.media .add { width: 54px; aspect-ratio: 4 / 5; border: 1.5px dashed var(--line-strong); border-radius: 9px; display: grid; place-items: center; color: var(--ink-3); font-size: 16px; }
+.when { display: flex; gap: 8px; align-items: center; }
+.when .inp { padding: 6px 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); font-size: 11px; font-variant-numeric: tabular-nums; }
+.preview { background: var(--sunk); border-radius: 14px; padding: 14px; display: grid; gap: 10px; align-content: start; }
+.preview .tabs { display: flex; gap: 6px; }
+.phones { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
+.phone2 { border-radius: 20px; border: 5px solid var(--ink); background: var(--surface); overflow: hidden; }
+.phone2 .hd { display: flex; align-items: center; gap: 6px; padding: 7px 8px; font-size: 9px; font-weight: 650; }
+.phone2 .hd i { width: 16px; height: 16px; border-radius: 50%; background: linear-gradient(145deg, #5b5e62, #313337); }
+.phone2 .th { border-radius: 0; }
+.phone2 .tx { padding: 7px 8px 10px; font-size: 8.5px; line-height: 1.4; color: var(--ink-2); }
+.phone2 .tx b { color: var(--ink); }
+.pfmini { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 11px; padding: 9px 10px; }
+.ring { width: 42px; height: 42px; border-radius: 50%; background: conic-gradient(var(--ink) 0 72%, var(--line) 72% 100%); display: grid; place-items: center; }
+.ring::before { content: attr(data-v); width: 32px; height: 32px; border-radius: 50%; background: var(--surface); display: grid; place-items: center; font-weight: 700; font-size: 12px; font-variant-numeric: tabular-nums; }
+
+/* Pre-flight mock */
+.verdict { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 16px; align-items: center; }
+.ring.lg { width: 74px; height: 74px; }
+.ring.lg::before { width: 60px; height: 60px; font-size: 22px; }
+.verdict h4 { margin: 0; font-family: var(--serif); font-size: 22px; font-weight: 600; line-height: 1.2; }
+.grades { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.grade { background: var(--surface); border: 1px solid var(--line); border-radius: 11px; padding: 9px 10px; display: grid; gap: 2px; }
+.grade span { font-size: 9px; font-weight: 650; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }
+.grade b { font-size: 22px; font-weight: 700; letter-spacing: -.02em; }
+.grade small { font-size: 9.5px; color: var(--ink-2); }
+.grade.lo b { color: var(--bad); }
+.grade.mid b { color: var(--warn); }
+.pfgrid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 12px; }
+.video { border-radius: 11px; overflow: hidden; position: relative; }
+.video .th { aspect-ratio: 16 / 9; border-radius: 0; }
+.timeline { margin-top: 8px; }
+.timeline svg { width: 100%; height: 76px; display: block; }
+.tl-axis { display: flex; justify-content: space-between; font-size: 8.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; margin-top: 2px; }
+.brain { border-radius: 11px; aspect-ratio: 4 / 3; background: radial-gradient(40% 30% at 58% 58%, rgba(243,156,18,.95), rgba(192,57,43,.6) 45%, transparent 70%), radial-gradient(70% 60% at 50% 50%, #d9d9dc, #9c9da3 70%, #2a2b30 100%); }
+.fixes { display: grid; gap: 6px; margin-top: 10px; }
+.fix { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; gap: 8px; align-items: center; font-size: 10.5px; padding: 7px 8px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
+.fix i { width: 12px; height: 12px; border: 1.5px solid var(--line-strong); border-radius: 4px; }
+.fix.done i { background: var(--ink); border-color: var(--ink); }
+.fix.done span { color: var(--ink-3); text-decoration: line-through; }
+
+/* Analytics mock */
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.kpi { display: grid; gap: 4px; }
+.an { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.heat { display: grid; grid-template-columns: 34px repeat(7, minmax(0, 1fr)); gap: 3px; margin-top: 10px; font-size: 8.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.heat .cell { aspect-ratio: 1.6; border-radius: 4px; background: color-mix(in oklab, var(--ink) var(--v), var(--surface)); }
+.heat .hl { text-align: center; font-weight: 650; }
+.heat .tl { text-align: right; padding-right: 4px; align-self: center; }
+.worked { display: grid; gap: 8px; margin-top: 10px; }
+.wrow { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; gap: 10px; align-items: center; font-size: 11px; }
+.wrow .th { aspect-ratio: 1; border-radius: 7px; }
+.wrow b { font-weight: 650; display: block; }
+.wrow span { color: var(--ink-3); font-size: 10px; }
+.wrow .x { font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* Inbox mock */
+.inbox { display: grid; grid-template-columns: 230px minmax(0, 1fr) 200px; background: var(--surface); border: 1px solid var(--line); border-radius: 13px; overflow: hidden; min-height: 330px; }
+.convos { border-right: 1px solid var(--line); display: grid; align-content: start; }
+.convos .f { display: flex; gap: 5px; padding: 9px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.cv { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 8px; padding: 9px 10px; border-bottom: 1px solid var(--line); }
+.cv.on { background: var(--sunk); box-shadow: inset 2px 0 0 var(--ink); }
+.cv .av { width: 26px; height: 26px; border-radius: 50%; background: var(--sunk); border: 1px solid var(--line); display: grid; place-items: center; font-size: 9.5px; font-weight: 700; }
+.cv b { font-size: 11px; font-weight: 650; display: flex; justify-content: space-between; gap: 6px; }
+.cv b span { color: var(--ink-3); font-weight: 500; font-size: 9.5px; }
+.cv p { font-size: 10.5px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.thread { display: grid; grid-template-rows: auto 1fr auto; min-width: 0; }
+.thread .hd { padding: 10px 12px; border-bottom: 1px solid var(--line); display: flex; gap: 8px; align-items: center; font-size: 11px; }
+.msgs { padding: 12px; display: grid; gap: 9px; align-content: start; }
+.msg { max-width: 78%; padding: 8px 10px; border-radius: 12px; background: var(--sunk); font-size: 11px; }
+.msg.me { justify-self: end; background: var(--ink); color: var(--on-ink); }
+.reply { margin: 0 12px 12px; border: 1px solid var(--line-strong); border-radius: 11px; padding: 9px; display: grid; gap: 7px; }
+.reply .draft { font-size: 11px; color: var(--ink-2); }
+.reply .row { display: flex; gap: 6px; align-items: center; }
+.ctx { border-left: 1px solid var(--line); padding: 12px; display: grid; gap: 10px; align-content: start; font-size: 10.5px; color: var(--ink-2); }
+.ctx b { color: var(--ink); font-weight: 650; }
+.ctx .th { aspect-ratio: 4 / 5; }
+
+/* Building blocks + roadmap */
+.blocks { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; }
+.block { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 18px; display: grid; gap: 10px; align-content: start; }
+.block strong { font-size: 15px; font-weight: 650; }
+.block p { font-size: 13.5px; color: var(--ink-2); }
+.block .demo { background: var(--canvas); border-radius: 11px; padding: 12px; font-size: 11px; line-height: 1.45; }
+.roadmap { display: grid; gap: 0; border-top: 1px solid var(--line); }
+.phase { display: grid; grid-template-columns: 120px minmax(0, 1fr) minmax(0, 1.2fr); gap: 12px 28px; padding-block: 24px; border-bottom: 1px solid var(--line); }
+.phase .n { font-family: var(--serif); font-size: 40px; font-weight: 600; line-height: 1; }
+.phase .n small { display: block; font-family: var(--sans); font-size: 11px; font-weight: 600; color: var(--ink-3); letter-spacing: .06em; text-transform: uppercase; margin-top: 6px; }
+.phase h3 { font-size: 26px; }
+.phase p { font-size: 14px; color: var(--ink-2); margin-top: 6px; }
+.phase ul { margin: 0; padding-left: 18px; font-size: 14px; color: var(--ink-2); display: grid; gap: 4px; }
+.qs { display: grid; gap: 12px; counter-reset: q; }
+.q { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; padding: 16px 18px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
+.q b { font-weight: 650; }
+.q span { font-size: 14px; color: var(--ink-2); }
+.sources { columns: 2 280px; column-gap: 32px; font-size: 13.5px; padding-left: 18px; color: var(--ink-2); }
+.sources li { margin-bottom: 6px; break-inside: avoid; }
+footer { margin-top: 64px; padding-top: 22px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--ink-3); }
+
+@media (max-width: 760px) {
+  .wrap { padding-inline: 16px; }
+  .top-in { padding-inline: 16px; }
+  .screen-head { grid-template-columns: 1fr; }
+  .screen-head .tag { text-align: left; }
+  .phase { grid-template-columns: 1fr; }
+  .lede { font-size: 16.5px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .ev.drag { transition: transform .3s var(--ease); }
+}
+</style>
+
+<header class="top">
+  <div class="top-in">
+    <div class="mark"><i aria-hidden="true"></i>MOTION</div>
+    <nav aria-label="Sections">
+      <a href="#research">Research</a>
+      <a href="#principles">Principles</a>
+      <a href="#overview">Overview</a>
+      <a href="#planner">Planner</a>
+      <a href="#lab">Content Lab</a>
+      <a href="#composer">Composer</a>
+      <a href="#preflight">Pre-flight</a>
+      <a href="#analytics">Analytics</a>
+      <a href="#inbox">Inbox</a>
+      <a href="#roadmap">Roadmap</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="hero" aria-labelledby="t">
+    <div class="eyebrow">Product design proposal · October 2026</div>
+    <h1 id="t">From a set of tools to <em>a calm studio</em> for your content.</h1>
+    <p class="lede">Motion already has the Cailyx look. What it lacks is structure built around the work: getting from an idea to a published post and learning from the result. This proposal puts the content first, joins the steps into one flow, and makes every number explain itself.</p>
+    <div class="meta"><span><b>Scope</b> All nine screens + shared components</span><span><b>Keeps</b> Graphite palette, serif headings, Montserrat</span><span><b>Delivery</b> 4 phases, each one shippable</span></div>
+  </section>
+
+  <section aria-labelledby="now">
+    <div class="sec-head col">
+      <div class="eyebrow">Where it stands</div>
+      <h2 id="now">Polished surfaces, generic structure</h2>
+      <p class="lede">A walk through every screen of the current app turned up five structural problems. None of them are about colour or type.</p>
+    </div>
+    <div class="diag">
+      <div><strong>Every page is the same page</strong><p>Hooks, Ideas, Automations and Inbox all use a form on the left and a list on the right. Nothing is shaped by what the page is for.</p></div>
+      <div><strong>Content is hidden</strong><p>Posts, reels and hooks are what Motion produces, yet they appear as one-line text rows. There are almost no thumbnails.</p></div>
+      <div><strong>The core loop is broken up</strong><p>Idea, hook, draft, check, schedule and review sit on six separate pages. Each step starts from an empty form.</p></div>
+      <div><strong>Numbers without meaning</strong><p>Stat tiles show a figure with no comparison, and the main chart is a single line. Only Pre-flight explains itself.</p></div>
+      <div><strong>Empty states stop you</strong><p>"No ideas yet" in a dashed box. There is no sample, no one-click start, nothing to learn from.</p></div>
+    </div>
+  </section>
+
+  <section id="research" aria-labelledby="r">
+    <div class="sec-head col">
+      <div class="eyebrow">Research</div>
+      <h2 id="r">What the leading tools get right</h2>
+      <p class="lede">Six products set the bar for this category, plus the wider 2026 SaaS patterns. For each, the pattern worth taking and how it would land in Motion.</p>
+    </div>
+    <div class="research">
+      <article class="ref">
+        <div class="ref-head"><h3>Later</h3><span>Visual planning</span></div>
+        <p>The visual Instagram planner shows your profile grid as followers will see it, with scheduled posts placed among published ones. You drag media from a side library straight onto the grid or calendar.</p>
+        <div class="take"><b>For Motion:</b> a Feed preview beside the Planner, and media you can drag onto a day.</div>
+      </article>
+      <article class="ref">
+        <div class="ref-head"><h3>Buffer</h3><span>Ideas pipeline</span></div>
+        <p>The Create space stores ideas without choosing a channel first. Ideas are tagged, shown as a board or gallery, dragged between stages from idea to publish, and turned into a post when ready.</p>
+        <div class="take"><b>For Motion:</b> merge Ideas and Hooks into one Content Lab board with stages.</div>
+      </article>
+      <article class="ref">
+        <div class="ref-head"><h3>Metricool</h3><span>Best time to post</span></div>
+        <p>A heatmap with days as columns and time slots as rows, where a darker cell means a better time, built from your own past performance and shown inside planning.</p>
+        <div class="take"><b>For Motion:</b> the same heatmap in Analytics, and its best slots shaded into the Planner.</div>
+      </article>
+      <article class="ref">
+        <div class="ref-head"><h3>Sprout Social</h3><span>Smart Inbox</span></div>
+        <p>One stream for comments, DMs and mentions across profiles. Conversation history appears inline as you reply, handled messages drop out, and AI helps draft replies.</p>
+        <div class="take"><b>For Motion:</b> a three-pane Inbox with context about the post and the person.</div>
+      </article>
+      <article class="ref">
+        <div class="ref-head"><h3>OpusClip</h3><span>Explaining a score</span></div>
+        <p>The 0–99 virality score is split into Hook, Flow, Value and Trend, each with a letter grade, next to a written summary and a timestamped transcript. Their own guidance treats the score as a ranking, not an approval.</p>
+        <div class="take"><b>For Motion:</b> Pre-flight leads with letter grades per factor, tied to moments on the timeline.</div>
+      </article>
+      <article class="ref">
+        <div class="ref-head"><h3>Linear</h3><span>Speed and polish</span></div>
+        <p>Every action is one keystroke away through the command palette, widely seen as the benchmark for this pattern. Calm, dense layouts and quick transitions make the app feel fast.</p>
+        <div class="take"><b>For Motion:</b> ⌘K grows from navigation into actions: "Schedule", "Check reel", "New idea about…".</div>
+      </article>
+      <article class="ref">
+        <div class="ref-head"><h3>2026 SaaS dashboards</h3><span>Wider trends</span></div>
+        <p>Dashboards are moving from static reports to AI that surfaces what matters, bento grids that group content into scannable blocks, and modular widgets people arrange themselves.</p>
+        <div class="take"><b>For Motion:</b> an Overview bento with one AI brief at the top and tiles you can rearrange later.</div>
+      </article>
+      <article class="ref">
+        <div class="ref-head"><h3>The common thread</h3><span>Takeaway</span></div>
+        <p>The best tools in this category show the content itself, bring planning, checking and results into one place, and explain numbers in words. Feature lists across tools are now very similar, so the experience is where tools are told apart.</p>
+        <div class="take"><b>For Motion:</b> Pre-flight and the brain view are a real differentiator. Build the studio around them.</div>
+      </article>
+    </div>
+  </section>
+
+  <section id="principles" aria-labelledby="p">
+    <div class="sec-head col">
+      <div class="eyebrow">Principles</div>
+      <h2 id="p">Four rules for every screen</h2>
+    </div>
+    <div class="principles">
+      <div class="principle"><h3>Content first</h3><p>Thumbnails, reel frames and phone previews are the main visual. The interface around them stays quiet, in ink and grey.</p></div>
+      <div class="principle"><h3>One flow</h3><p>A post is one object moving through stages: idea, draft, checked, scheduled, published. Every screen shows where it is and offers the next step.</p></div>
+      <div class="principle"><h3>Numbers that talk</h3><p>Every figure comes with a comparison and one plain sentence, such as "Reels posted before 7pm reach 2.1× more people".</p></div>
+      <div class="principle"><h3>Calm motion</h3><p>Soft staggered reveals, smooth reordering and slight hover lifts, all on Cailyx's single easing curve. Nothing bounces.</p></div>
+    </div>
+  </section>
+
+  <!-- Overview -->
+  <section id="overview" class="screen" aria-labelledby="s1">
+    <div class="screen-head">
+      <div class="sec-head" style="margin:0"><div class="eyebrow">Screen 1 · Overview</div><h2 id="s1">A morning brief, not a stats page</h2></div>
+      <div class="tag">Patterns from <b>2026 dashboards</b>, <b>Later</b></div>
+    </div>
+    <div class="mock-scroll" role="img" aria-label="Mockup of the redesigned Overview screen">
+      <div class="app">
+        <aside class="side">
+          <div class="mark"><i></i>MOTION</div>
+          <div class="lbl">Studio</div>
+          <div class="it on">Overview</div><div class="it">Planner</div><div class="it">Content Lab <span class="k">5</span></div><div class="it">Pre-flight</div>
+          <div class="lbl">Engage</div>
+          <div class="it">Inbox <span class="k">3</span></div><div class="it">Automations</div>
+          <div class="lbl">Measure</div>
+          <div class="it">Analytics</div><div class="it">Connections</div>
+        </aside>
+        <div class="main">
+          <div class="bar"><span class="crumb">Studio</span><span class="ptitle">Overview</span><span class="search">Search or run a command <kbd>⌘K</kbd></span></div>
+          <div class="brief">
+            <div><div class="e">Monday, October 5</div><h4>Good morning, Madan</h4></div>
+            <span class="btn">+ New post</span>
+          </div>
+          <div class="todayline"><span class="ai">AI</span><span><b>2 posts go out today.</b> Thursday's reel still needs a cover. Your Tuesday reel is at <b>2.4×</b> your usual reach.</span><span class="acts"><span class="chip">Add cover</span><span class="chip">See reel</span></span></div>
+          <div class="bento">
+            <div class="tile hero-t">
+              <div class="tile-t">Reach · last 30 days <span>All channels</span></div>
+              <div class="big">28.4k</div>
+              <div class="sub">+18% on the previous 30 days · best day Sep 29</div>
+              <svg viewBox="0 0 300 110" preserveAspectRatio="none" aria-hidden="true">
+                <defs><linearGradient id="hf" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff" stop-opacity=".28"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></linearGradient></defs>
+                <path d="M0 92 L20 86 L40 88 L60 76 L80 80 L100 70 L120 72 L140 60 L160 64 L180 50 L200 56 L220 40 L240 46 L260 30 L280 34 L300 22 L300 110 L0 110 Z" fill="url(#hf)"/>
+                <path d="M0 92 L20 86 L40 88 L60 76 L80 80 L100 70 L120 72 L140 60 L160 64 L180 50 L200 56 L220 40 L240 46 L260 30 L280 34 L300 22" fill="none" stroke="#ffffff" stroke-width="2"/>
+                <path d="M0 98 L30 96 L60 94 L90 92 L120 90 L150 88 L180 86 L210 84 L240 82 L270 80 L300 78" fill="none" stroke="#ffffff" stroke-opacity=".35" stroke-width="1.5" stroke-dasharray="4 4"/>
+                <circle cx="300" cy="22" r="3.5" fill="#ffffff"/>
+              </svg>
+            </div>
+            <div class="tile next-t">
+              <div class="tile-t">Up next <span class="chip good">in 2h</span></div>
+              <div class="phone"><div class="th g7"><span class="pf">REEL</span><span class="cap">Three small habits that changed how we work</span></div></div>
+              <div style="font-size:10.5px;color:var(--ink-2)"><b style="color:var(--ink)">Today, 6:30 PM</b> · Instagram<br>Pre-flight 81 · ready</div>
+            </div>
+            <div class="tile stat-t">
+              <div class="tile-t">Engagement rate <span class="chip good">+0.8 pts</span></div>
+              <div class="big">4.2%</div>
+              <svg class="spark" viewBox="0 0 120 26" preserveAspectRatio="none" aria-hidden="true"><path d="M0 20 L15 18 L30 19 L45 14 L60 15 L75 10 L90 12 L105 7 L120 5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+              <div class="insight"><span class="ai">AI</span><span>Carousels lead this month at <b>6.1%</b>.</span></div>
+            </div>
+            <div class="tile stat-t">
+              <div class="tile-t">Queue health <span class="chip warn">1 needs media</span></div>
+              <div class="big">6 <span style="font-size:13px;font-weight:600;color:var(--ink-3)">scheduled</span></div>
+              <div style="display:flex;gap:3px;margin-top:4px" aria-hidden="true"><i style="flex:5;height:6px;border-radius:3px;background:var(--ink)"></i><i style="flex:1;height:6px;border-radius:3px;background:var(--warn)"></i><i style="flex:2;height:6px;border-radius:3px;background:var(--line)"></i></div>
+              <div class="insight"><span>Covered through <b>Thursday</b>. Friday is empty.</span></div>
+            </div>
+            <div class="tile week-t">
+              <div class="tile-t">This week <span>Drag to reschedule</span></div>
+              <div class="week">
+                <div class="day today"><div class="d">MON 5 <span class="best">best 6pm</span></div><div class="th g7"><span class="play"></span></div><div class="th g2"></div></div>
+                <div class="day"><div class="d">TUE 6</div><div class="th g3"></div></div>
+                <div class="day"><div class="d">WED 7 <span class="best">best 7pm</span></div><div class="th g4"><span class="play"></span></div></div>
+                <div class="day"><div class="d">THU 8</div><div class="th g6" style="outline:1.5px dashed var(--warn);outline-offset:-1.5px"></div></div>
+                <div class="day"><div class="d">FRI 9</div></div>
+                <div class="day"><div class="d">SAT 10</div><div class="th g5"></div></div>
+                <div class="day"><div class="d">SUN 11</div></div>
+              </div>
+            </div>
+            <div class="tile top-t">
+              <div class="tile-t">What worked lately <span>Sorted by reach</span></div>
+              <div class="gallery">
+                <div class="gpost"><div class="th g1 sq"><span class="play"></span><span class="pf">2.4×</span></div><div class="m"><b>9.8k</b><span>6.4%</span></div></div>
+                <div class="gpost"><div class="th g8 sq"><span class="pf">1.9×</span></div><div class="m"><b>7.1k</b><span>5.2%</span></div></div>
+                <div class="gpost"><div class="th g4 sq"><span class="play"></span></div><div class="m"><b>4.3k</b><span>4.8%</span></div></div>
+                <div class="gpost"><div class="th g2 sq"></div><div class="m"><b>3.9k</b><span>3.9%</span></div></div>
+                <div class="gpost"><div class="th g5 sq"></div><div class="m"><b>2.6k</b><span>3.1%</span></div></div>
+                <div class="gpost"><div class="th g6 sq"><span class="play"></span></div><div class="m"><b>2.2k</b><span>2.7%</span></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="notes">
+      <div class="note"><i>1</i><div><b>One AI line on top</b>What matters today, with the action next to it. It replaces four tiles you have to read and interpret.</div></div>
+      <div class="note"><i>2</i><div><b>An ink hero tile</b>The headline metric on the dark Cailyx hero surface, with a comparison line and plain-English context.</div></div>
+      <div class="note"><i>3</i><div><b>The next post as a phone</b>You see the actual post that goes out next, not a text row.</div></div>
+      <div class="note"><i>4</i><div><b>The week as thumbnails</b>Gaps, best times and posts that need attention show at a glance. Dragging between days reschedules.</div></div>
+    </div>
+  </section>
+
+  <!-- Planner -->
+  <section id="planner" class="screen" aria-labelledby="s2">
+    <div class="screen-head">
+      <div class="sec-head" style="margin:0"><div class="eyebrow">Screen 2 · Planner</div><h2 id="s2">A calendar you can see, with your feed beside it</h2></div>
+      <div class="tag">Patterns from <b>Later</b>, <b>Metricool</b></div>
+    </div>
+    <div class="mock-scroll" role="img" aria-label="Mockup of the redesigned Planner with best-time shading and a feed preview">
+      <div class="app">
+        <aside class="side">
+          <div class="mark"><i></i>MOTION</div>
+          <div class="lbl">Studio</div>
+          <div class="it">Overview</div><div class="it on">Planner</div><div class="it">Content Lab</div><div class="it">Pre-flight</div>
+          <div class="lbl">Engage</div><div class="it">Inbox</div><div class="it">Automations</div>
+          <div class="lbl">Measure</div><div class="it">Analytics</div><div class="it">Connections</div>
+        </aside>
+        <div class="main">
+          <div class="bar"><span class="crumb">Studio</span><span class="ptitle">Planner</span><span class="search">Search or run a command <kbd>⌘K</kbd></span></div>
+          <div class="ptool">
+            <span class="ptitle" style="font-size:16px">Oct 5 – 11</span>
+            <span class="seg"><span class="on">Week</span><span>Month</span><span>List</span></span>
+            <span class="chip good">Best times shown</span>
+            <span class="chip">All channels</span>
+            <span style="margin-left:auto" class="btn">+ New post</span>
+          </div>
+          <div class="plan">
+            <div class="cal">
+              <div class="h"></div><div class="h today">Mon 5</div><div class="h">Tue 6</div><div class="h">Wed 7</div><div class="h">Thu 8</div><div class="h">Fri 9</div><div class="h">Sat 10</div><div class="h">Sun 11</div>
+              <div class="t">9am</div>
+              <div class="c"><div class="ev"><div class="th g2"></div><div><b>Studio morning</b><span>FB · 9:15</span></div></div></div>
+              <div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div>
+              <div class="c hot"></div><div class="c hot"></div>
+              <div class="t">1pm</div>
+              <div class="c"></div>
+              <div class="c"><div class="ev"><div class="th g3"></div><div><b>We're hiring</b><span>TH · 1:00</span></div></div></div>
+              <div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div>
+              <div class="t">6pm</div>
+              <div class="c hot"><div class="ev"><div class="th g7"></div><div><b>Three habits</b><span>IG reel · 6:30</span></div></div></div>
+              <div class="c hot"></div>
+              <div class="c hot"><div class="ev drag"><div class="th g4"></div><div><b>Spring drop</b><span>IG · moving…</span></div></div></div>
+              <div class="c hot"><div class="ev warn"><div class="th g6"></div><div><b>Launch teaser</b><span style="color:var(--warn)">needs cover</span></div></div></div>
+              <div class="c"></div>
+              <div class="c"><div class="ev"><div class="th g5"></div><div><b>Weekend notes</b><span>IG · 7:00</span></div></div></div>
+              <div class="c"></div>
+            </div>
+            <div class="feed">
+              <div class="tile-t">Feed preview <span class="chip">Instagram</span></div>
+              <div class="prof"><span class="av"></span><div><b>studio.north</b><br><span class="muted">3 scheduled · outlined</span></div></div>
+              <div class="grid3">
+                <div class="th g7 new"></div><div class="th g4 new"></div><div class="th g5 new"></div>
+                <div class="th g1"></div><div class="th g8"></div><div class="th g2"></div>
+                <div class="th g3"></div><div class="th g6"></div><div class="th g4"></div>
+              </div>
+              <div class="insight"><span class="ai">AI</span><span>Three warm images in a row. Swap <b>Spring drop</b> with a cooler post to balance the grid.</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="notes">
+      <div class="note"><i>1</i><div><b>Thumbnails on the calendar</b>Each event shows its media, channel and time. A post that needs attention is outlined in amber.</div></div>
+      <div class="note"><i>2</i><div><b>Best-time shading</b>Slots that perform well for you are tinted. Drop a post there and it lands at the best minute.</div></div>
+      <div class="note"><i>3</i><div><b>Drag to reschedule</b>The card lifts as you drag it, with a short confirmation and Undo afterwards.</div></div>
+      <div class="note"><i>4</i><div><b>Feed preview</b>Scheduled posts placed into your real grid, so you plan how the profile looks, not just when posts go out.</div></div>
+    </div>
+  </section>
+
+  <!-- Content Lab -->
+  <section id="lab" class="screen" aria-labelledby="s3">
+    <div class="screen-head">
+      <div class="sec-head" style="margin:0"><div class="eyebrow">Screen 3 · Content Lab</div><h2 id="s3">Ideas and hooks become one board</h2></div>
+      <div class="tag">Patterns from <b>Buffer Create</b></div>
+    </div>
+    <div class="mock-scroll" role="img" aria-label="Mockup of the Content Lab board with stages from Fresh to Scheduled">
+      <div class="app">
+        <aside class="side">
+          <div class="mark"><i></i>MOTION</div>
+          <div class="lbl">Studio</div>
+          <div class="it">Overview</div><div class="it">Planner</div><div class="it on">Content Lab <span class="k">5</span></div><div class="it">Pre-flight</div>
+          <div class="lbl">Engage</div><div class="it">Inbox</div><div class="it">Automations</div>
+          <div class="lbl">Measure</div><div class="it">Analytics</div><div class="it">Connections</div>
+        </aside>
+        <div class="main">
+          <div class="bar"><span class="crumb">Studio</span><span class="ptitle">Content Lab</span><span class="seg" style="margin-left:12px"><span class="on">Board</span><span>Gallery</span><span>Hook library</span></span><span class="search">Search or run a command <kbd>⌘K</kbd></span></div>
+          <div class="prompt"><span class="ai">AI</span><span>Ideas for a back-to-school week, in our voice, for Reels…</span><span class="acts"><span class="chip">5 ideas</span><span class="chip">Reels</span><span class="btn">Generate</span></span></div>
+          <div class="board">
+            <div class="lane">
+              <div class="lane-h">Fresh <span>5 · today</span></div>
+              <div class="card"><h5>The 10-minute Sunday reset</h5><div class="hook">"I used to lose every Monday. Then I tried this."</div><div class="ft"><span class="pl">IG</span><span class="chip">Story hook</span><span class="score">82</span></div></div>
+              <div class="card"><h5>Desk tour, but honest</h5><div class="hook">"Nobody shows you the messy part of [desk]."</div><div class="ft"><span class="pl">IG</span><span class="pl">TH</span><span class="score">74</span></div></div>
+              <div class="card"><h5>What we stopped doing in 2026</h5><div class="ft"><span class="pl">TH</span><span class="chip">Contrarian</span><span class="score">69</span></div></div>
+            </div>
+            <div class="lane">
+              <div class="lane-h">Saved <span>3</span></div>
+              <div class="card"><div class="th g1"></div><h5>Behind the spring drop</h5><div class="ft"><span class="pl">IG</span><span class="chip">Reel</span><span class="score">88</span></div></div>
+              <div class="card"><h5>A day of client calls</h5><div class="hook">"This one change made [result] almost overnight."</div><div class="ft"><span class="pl">FB</span><span class="score">71</span></div></div>
+            </div>
+            <div class="lane">
+              <div class="lane-h">Drafting <span>2</span></div>
+              <div class="card" style="border-color:var(--ink)"><div class="th g6"><span class="play"></span></div><h5>Launch teaser</h5><div class="ft"><span class="pl">IG</span><span class="chip warn">Needs cover</span><span class="score">76</span></div></div>
+              <div class="card"><h5>Customer story: Ana</h5><div class="ft"><span class="pl">FB</span><span class="pl">IG</span><span class="chip">Caption 60%</span></div></div>
+            </div>
+            <div class="lane">
+              <div class="lane-h">Scheduled <span>6</span></div>
+              <div class="card"><div class="th g7"><span class="play"></span></div><h5>Three habits</h5><div class="ft"><span class="pl">IG</span><span class="chip good">Today 6:30</span><span class="score">81</span></div></div>
+              <div class="card"><div class="th g4"></div><h5>Spring drop</h5><div class="ft"><span class="pl">IG</span><span class="chip">Wed 7:00</span></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="notes">
+      <div class="note"><i>1</i><div><b>One prompt bar</b>Generating ideas is a single line with options as chips. It replaces the current form with five fields.</div></div>
+      <div class="note"><i>2</i><div><b>Stages you can drag</b>Fresh, Saved, Drafting, Scheduled. Moving a card to Drafting opens it in the Composer.</div></div>
+      <div class="note"><i>3</i><div><b>Hooks live inside ideas</b>Each idea carries its opening line. The Hook library becomes a view of the same board, not a separate page.</div></div>
+      <div class="note"><i>4</i><div><b>A predicted score on every card</b>A quick read on how likely each idea is to land, with the full check in Pre-flight.</div></div>
+    </div>
+  </section>
+
+  <!-- Composer -->
+  <section id="composer" class="screen" aria-labelledby="s4">
+    <div class="screen-head">
+      <div class="sec-head" style="margin:0"><div class="eyebrow">Screen 4 · Composer</div><h2 id="s4">A full studio with live phone previews</h2></div>
+      <div class="tag">Patterns from <b>Buffer</b>, <b>Later</b></div>
+    </div>
+    <div class="mock-scroll" role="img" aria-label="Mockup of the full-screen Composer with editor and phone previews">
+      <div class="app" style="grid-template-columns:1fr">
+        <div class="main">
+          <div class="bar"><span class="crumb">Content Lab ›</span><span class="ptitle">Launch teaser</span><span class="chip">Draft · saved 2s ago</span><span style="margin-left:auto;display:flex;gap:6px"><span class="btn ghost">Check reel</span><span class="btn">Schedule</span></span></div>
+          <div class="studio">
+            <div class="editor">
+              <div class="fld"><label>Publish to</label><div class="chans"><span class="chan on"><span class="pl">IG</span>studio.north</span><span class="chan on"><span class="pl">FB</span>Studio North</span><span class="chan"><span class="pl">TH</span>studionorth</span></div></div>
+              <div class="fld"><label>Caption · 142 / 2,200</label>
+                <div class="cap-box">Something new lands Friday<span class="cursor"></span> <span class="ghost">and it started as a sketch on a napkin.</span>
+                  <div class="suggest">
+                    <div><span class="ai">AI</span><span>Stronger openings from your best hooks</span></div>
+                    <div><b>"We almost didn't ship this."</b><span class="chip">Story</span></div>
+                    <div><b>"Nobody talks about the napkin stage."</b><span class="chip">Curiosity</span></div>
+                  </div>
+                </div>
+              </div>
+              <div class="fld"><label>Media</label><div class="media"><div class="th g6"><span class="play"></span></div><div class="th g3"></div><div class="add">+</div></div></div>
+              <div class="fld"><label>When</label><div class="when"><span class="inp">Fri, Oct 9 · 7:00 PM</span><span class="chip good">Best time for you</span><span class="chip">Post now</span></div></div>
+            </div>
+            <div class="preview">
+              <div class="tabs"><span class="seg"><span class="on">Instagram</span><span>Facebook</span><span>Threads</span></span></div>
+              <div class="phones">
+                <div class="phone2"><div class="hd"><i></i>studio.north</div><div class="th g6"><span class="play"></span></div><div class="tx"><b>studio.north</b> Something new lands Friday…</div></div>
+                <div class="phone2"><div class="hd"><i></i>Studio North</div><div class="tx" style="padding-top:2px">Something new lands Friday and it started as a sketch on a napkin.</div><div class="th g6 sq"></div></div>
+              </div>
+              <div class="pfmini"><span class="ring" data-v="76"></span><div><b style="font-size:11.5px">Pre-flight: likely fine</b><div style="font-size:10.5px;color:var(--ink-2)">Hook B · CTA C. The last 5 seconds are a static card.</div></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="notes">
+      <div class="note"><i>1</i><div><b>Full screen, not a modal</b>Writing a post is real work. It gets the whole screen and autosaves as a draft.</div></div>
+      <div class="note"><i>2</i><div><b>Hooks while you type</b>Better first lines appear as you write, drawn from the hooks that have worked for you.</div></div>
+      <div class="note"><i>3</i><div><b>A preview per platform</b>See the post as Instagram, Facebook and Threads will show it, including where captions get cut off.</div></div>
+      <div class="note"><i>4</i><div><b>Pre-flight inline</b>A live score and the one fix that matters most, without leaving the editor.</div></div>
+    </div>
+  </section>
+
+  <!-- Pre-flight -->
+  <section id="preflight" class="screen" aria-labelledby="s5">
+    <div class="screen-head">
+      <div class="sec-head" style="margin:0"><div class="eyebrow">Screen 5 · Pre-flight</div><h2 id="s5">The signature screen, laid out like an editing suite</h2></div>
+      <div class="tag">Patterns from <b>OpusClip</b></div>
+    </div>
+    <div class="mock-scroll" role="img" aria-label="Mockup of the Pre-flight result with grades, attention timeline and brain view">
+      <div class="app">
+        <aside class="side">
+          <div class="mark"><i></i>MOTION</div>
+          <div class="lbl">Studio</div>
+          <div class="it">Overview</div><div class="it">Planner</div><div class="it">Content Lab</div><div class="it on">Pre-flight</div>
+          <div class="lbl">Engage</div><div class="it">Inbox</div><div class="it">Automations</div>
+          <div class="lbl">Measure</div><div class="it">Analytics</div><div class="it">Connections</div>
+        </aside>
+        <div class="main">
+          <div class="verdict tile">
+            <span class="ring lg" data-v="64"></span>
+            <div><div class="tile-t" style="justify-content:flex-start;gap:8px">Launch teaser · Instagram reel · 0:28 <span class="chip warn">Fix before posting</span></div><h4>The gameplay sells it, but the last five seconds are a static logo card where viewers will likely swipe away.</h4></div>
+            <span class="btn">Open in Composer</span>
+          </div>
+          <div class="grades">
+            <div class="grade"><span>Hook</span><b>B+</b><small>Motion in the first second</small></div>
+            <div class="grade"><span>Clarity</span><b>A−</b><small>Clear without sound</small></div>
+            <div class="grade mid"><span>Pacing</span><b>C+</b><small>Slows at 0:19</small></div>
+            <div class="grade"><span>Emotion</span><b>B</b><small>Mild payoff</small></div>
+            <div class="grade lo"><span>Call to action</span><b>D</b><small>Arrives after drop-off</small></div>
+          </div>
+          <div class="pfgrid">
+            <div class="tile">
+              <div class="tile-t">Predicted attention <span>Click the curve to jump to that moment</span></div>
+              <div class="video" style="margin-top:8px"><div class="th g8 wide"><span class="play"></span></div></div>
+              <div class="timeline">
+                <svg viewBox="0 0 400 76" preserveAspectRatio="none" aria-hidden="true">
+                  <rect x="0" y="0" width="43" height="76" fill="currentColor" opacity=".06"/>
+                  <rect x="328" y="0" width="72" height="76" fill="var(--bad)" opacity=".12"/>
+                  <path d="M0 18 C40 14 70 22 110 24 S180 30 220 28 S280 34 300 40 S340 60 400 66" fill="none" stroke="currentColor" stroke-width="2"/>
+                  <path d="M0 30 C40 28 70 36 110 40 S180 46 220 46 S280 50 300 56 S340 66 400 70" fill="none" stroke="currentColor" stroke-opacity=".45" stroke-width="1.5" stroke-dasharray="4 4"/>
+                  <line x1="270" y1="0" x2="270" y2="76" stroke="currentColor" stroke-opacity=".5" stroke-width="1"/>
+                  <circle cx="270" cy="33" r="4" fill="currentColor"/>
+                </svg>
+                <div class="tl-axis"><span>0:00 · hook</span><span>0:07</span><span>0:14</span><span>0:19 · slows</span><span>0:23 · drop-off</span><span>0:28</span></div>
+              </div>
+            </div>
+            <div class="tile">
+              <div class="tile-t">Simulated brain response <span>avg. viewer</span></div>
+              <div class="brain" style="margin-top:8px" aria-hidden="true"></div>
+              <div class="fixes">
+                <div class="fix"><i></i><span>Cut the logo card to 1.5s</span><span class="chip bad">High</span></div>
+                <div class="fix"><i></i><span>Move the CTA to 0:18</span><span class="chip warn">Medium</span></div>
+                <div class="fix done"><i></i><span>Add burned-in captions</span><span class="chip">Done</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="notes">
+      <div class="note"><i>1</i><div><b>Verdict first</b>One score, one sentence and one action. The detail sits below for anyone who wants it.</div></div>
+      <div class="note"><i>2</i><div><b>Letter grades per factor</b>Hook, Clarity, Pacing, Emotion and CTA, each with a short reason. Weak grades are coloured.</div></div>
+      <div class="note"><i>3</i><div><b>The curve as a timeline</b>Attention sits directly under the video like an editing track, with drop-off zones marked.</div></div>
+      <div class="note"><i>4</i><div><b>Fixes as a checklist</b>Each fix links back to the Composer, and ticking it off re-runs the check.</div></div>
+    </div>
+  </section>
+
+  <!-- Analytics -->
+  <section id="analytics" class="screen" aria-labelledby="s6">
+    <div class="screen-head">
+      <div class="sec-head" style="margin:0"><div class="eyebrow">Screen 6 · Analytics</div><h2 id="s6">A report that reads like a story</h2></div>
+      <div class="tag">Patterns from <b>Metricool</b>, <b>Sprout Social</b></div>
+    </div>
+    <div class="mock-scroll" role="img" aria-label="Mockup of Analytics with KPI strip, best-time heatmap and top posts">
+      <div class="app">
+        <aside class="side">
+          <div class="mark"><i></i>MOTION</div>
+          <div class="lbl">Studio</div>
+          <div class="it">Overview</div><div class="it">Planner</div><div class="it">Content Lab</div><div class="it">Pre-flight</div>
+          <div class="lbl">Engage</div><div class="it">Inbox</div><div class="it">Automations</div>
+          <div class="lbl">Measure</div><div class="it on">Analytics</div><div class="it">Connections</div>
+        </aside>
+        <div class="main">
+          <div class="bar"><span class="crumb">Measure</span><span class="ptitle">Analytics</span><span class="seg" style="margin-left:auto"><span>7d</span><span class="on">30d</span><span>90d</span></span><span class="btn ghost">Export</span></div>
+          <div class="kpis">
+            <div class="tile kpi"><div class="tile-t">Reach</div><div class="big">28.4k</div><svg class="spark" viewBox="0 0 120 26" preserveAspectRatio="none" aria-hidden="true"><path d="M0 22 L20 19 L40 20 L60 14 L80 12 L100 8 L120 4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg><span class="chip good">+18%</span></div>
+            <div class="tile kpi"><div class="tile-t">Engagement</div><div class="big">4.2%</div><svg class="spark" viewBox="0 0 120 26" preserveAspectRatio="none" aria-hidden="true"><path d="M0 16 L20 18 L40 14 L60 15 L80 11 L100 12 L120 9" fill="none" stroke="currentColor" stroke-width="1.6"/></svg><span class="chip good">+0.8 pts</span></div>
+            <div class="tile kpi"><div class="tile-t">Followers</div><div class="big">+312</div><svg class="spark" viewBox="0 0 120 26" preserveAspectRatio="none" aria-hidden="true"><path d="M0 18 L20 17 L40 18 L60 16 L80 17 L100 14 L120 13" fill="none" stroke="currentColor" stroke-width="1.6"/></svg><span class="chip">flat</span></div>
+            <div class="tile kpi"><div class="tile-t">Posts</div><div class="big">14</div><svg class="spark" viewBox="0 0 120 26" preserveAspectRatio="none" aria-hidden="true"><path d="M0 10 L20 12 L40 14 L60 16 L80 18 L100 19 L120 21" fill="none" stroke="currentColor" stroke-width="1.6"/></svg><span class="chip warn">−22%</span></div>
+          </div>
+          <div class="todayline"><span class="ai">AI</span><span><b>Reels before 7pm reached 2.1× more people</b> than evening posts this month. You posted 4 fewer times than in September.</span><span class="acts"><span class="chip">Plan 3 reels</span></span></div>
+          <div class="an">
+            <div class="tile">
+              <div class="tile-t">When your audience responds <span>Engagement by hour</span></div>
+              <div class="heat" id="heat" aria-hidden="true"></div>
+            </div>
+            <div class="tile">
+              <div class="tile-t">What worked <span>vs. your average</span></div>
+              <div class="worked">
+                <div class="wrow"><div class="th g1"></div><div><b>Behind the spring drop</b><span>Reel · Sep 29 · 9.8k reach</span></div><span class="x">2.4×</span></div>
+                <div class="wrow"><div class="th g8"></div><div><b>Five tools we can't drop</b><span>Carousel · Sep 22 · 7.1k reach</span></div><span class="x">1.9×</span></div>
+                <div class="wrow"><div class="th g4"></div><div><b>Studio morning light</b><span>Reel · Sep 17 · 4.3k reach</span></div><span class="x">1.3×</span></div>
+                <div class="wrow"><div class="th g5"></div><div><b>Quote: on slow work</b><span>Image · Sep 12 · 1.1k reach</span></div><span class="x" style="color:var(--bad)">0.4×</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="notes">
+      <div class="note"><i>1</i><div><b>KPIs with trend and delta</b>Each figure has a sparkline and a coloured change, so the direction reads before the number.</div></div>
+      <div class="note"><i>2</i><div><b>Best time heatmap</b>Built from your own posts, not industry averages. The same data feeds the Planner shading.</div></div>
+      <div class="note"><i>3</i><div><b>What worked, as posts</b>Real thumbnails ranked against your average, including the ones that underperformed.</div></div>
+      <div class="note"><i>4</i><div><b>Insight to action</b>Each finding ends in a button that turns it into a plan, such as three reels on the board.</div></div>
+    </div>
+  </section>
+
+  <!-- Inbox -->
+  <section id="inbox" class="screen" aria-labelledby="s7">
+    <div class="screen-head">
+      <div class="sec-head" style="margin:0"><div class="eyebrow">Screen 7 · Inbox</div><h2 id="s7">Three panes, with the context to reply well</h2></div>
+      <div class="tag">Patterns from <b>Sprout Social</b></div>
+    </div>
+    <div class="mock-scroll" role="img" aria-label="Mockup of the three-pane Inbox">
+      <div class="app">
+        <aside class="side">
+          <div class="mark"><i></i>MOTION</div>
+          <div class="lbl">Studio</div>
+          <div class="it">Overview</div><div class="it">Planner</div><div class="it">Content Lab</div><div class="it">Pre-flight</div>
+          <div class="lbl">Engage</div><div class="it on">Inbox <span class="k">3</span></div><div class="it">Automations</div>
+          <div class="lbl">Measure</div><div class="it">Analytics</div><div class="it">Connections</div>
+        </aside>
+        <div class="main">
+          <div class="bar"><span class="crumb">Engage</span><span class="ptitle">Inbox</span><span class="search">Search or run a command <kbd>⌘K</kbd></span></div>
+          <div class="inbox">
+            <div class="convos">
+              <div class="f"><span class="chip dark">Needs reply 3</span><span class="chip">Questions</span><span class="chip">Done</span></div>
+              <div class="cv on"><span class="av">AR</span><div><b>ana.reads <span>2m</span></b><p>Is the spring drop available in sage?</p></div></div>
+              <div class="cv"><span class="av">JM</span><div><b>j.morales <span>18m</span></b><p>Loved the habits reel, more like this</p></div></div>
+              <div class="cv"><span class="av">KT</span><div><b>kit_t <span>1h</span></b><p>Do you ship to Canada?</p></div></div>
+              <div class="cv"><span class="av">LS</span><div><b>lu.studio <span>3h</span></b><p>Tagged you in a story</p></div></div>
+            </div>
+            <div class="thread">
+              <div class="hd"><span class="pl">IG</span><b>ana.reads</b><span class="muted">on "Behind the spring drop"</span><span class="chip" style="margin-left:auto">Question</span></div>
+              <div class="msgs">
+                <div class="msg">Is the spring drop available in sage? The one at 0:12 looks perfect.</div>
+                <div class="msg me">Hi Ana! Yes, sage is in the drop on Friday.</div>
+                <div class="msg">Amazing, what time?</div>
+              </div>
+              <div class="reply">
+                <div class="row"><span class="ai">AI</span><span class="draft">It goes live Friday at 7pm. Want us to send you the link the moment it's up?</span></div>
+                <div class="row"><span class="chip">Saved replies</span><span class="chip">Send as DM</span><span class="btn" style="margin-left:auto">Send reply</span></div>
+              </div>
+            </div>
+            <div class="ctx">
+              <div class="th g1"><span class="play"></span></div>
+              <div><b>Behind the spring drop</b><br>9.8k reach · 41 comments</div>
+              <div><b>ana.reads</b><br>Follower since 2024 · 6 past chats · bought twice</div>
+              <div class="chip good" style="justify-self:start">Positive</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="notes">
+      <div class="note"><i>1</i><div><b>Filtered queues</b>Needs reply, questions and done. A handled conversation leaves the queue on its own.</div></div>
+      <div class="note"><i>2</i><div><b>A real thread view</b>The whole conversation, not one comment at a time, with a reply box under it.</div></div>
+      <div class="note"><i>3</i><div><b>A drafted reply</b>Written in your voice from the context. You edit it and send it yourself.</div></div>
+      <div class="note"><i>4</i><div><b>Context on the right</b>The post being discussed and the person's history, so every reply is informed.</div></div>
+    </div>
+  </section>
+
+  <!-- Building blocks -->
+  <section aria-labelledby="b">
+    <div class="sec-head col">
+      <div class="eyebrow">Shared components</div>
+      <h2 id="b">Six pieces, built once</h2>
+      <p class="lede">Every screen above is built from the same small set. Making these first keeps the redesign consistent and quick to roll out.</p>
+    </div>
+    <div class="blocks">
+      <div class="block"><strong>Post card</strong><p>Thumbnail, channel, status, time and score. The most-used piece in the app, in compact, calendar and gallery sizes.</p><div class="demo"><div class="ev" style="max-width:220px"><div class="th g7"></div><div><b>Three habits</b><span>IG reel · Today 6:30</span></div></div></div></div>
+      <div class="block"><strong>Phone preview</strong><p>A per-platform frame that shows caption cut-offs, aspect ratios and covers. Used in the Composer, Planner and Overview.</p></div>
+      <div class="block"><strong>Insight line</strong><p>One AI sentence plus an action. It is how numbers explain themselves across Overview, Analytics and Pre-flight.</p><div class="demo"><div class="insight"><span class="ai">AI</span><span>Carousels lead this month at <b>6.1%</b>.</span></div></div></div>
+      <div class="block"><strong>Detail drawer</strong><p>A slide-over panel to inspect a post, idea or conversation without losing your place on the page.</p></div>
+      <div class="block"><strong>Bento tiles</strong><p>Standard, ink hero and media tiles on a 12-column grid, with Cailyx's staggered reveal on load.</p></div>
+      <div class="block"><strong>Command bar actions</strong><p>⌘K runs actions as well as navigating: schedule, check a reel, generate ideas, jump to a post.</p><div class="demo">⌘K › <b>Check</b> "Launch teaser"</div></div>
+    </div>
+  </section>
+
+  <!-- Roadmap -->
+  <section id="roadmap" aria-labelledby="rm">
+    <div class="sec-head col">
+      <div class="eyebrow">Roadmap</div>
+      <h2 id="rm">Four phases, each one shippable</h2>
+      <p class="lede">Ordered so that each phase is usable on its own and the shared pieces come before the screens that use them.</p>
+    </div>
+    <div class="roadmap">
+      <div class="phase"><div class="n">1<small>Foundations</small></div><div><h3>Shared components and data</h3><p>Nothing new visible yet, but every later phase speeds up.</p></div><ul><li>Post card, phone preview, insight line, drawer, bento tiles</li><li>Thumbnails stored and served for every post</li><li>Post stages (idea → published) in the data model</li><li>⌘K actions</li></ul></div>
+      <div class="phase"><div class="n">2<small>First impression</small></div><div><h3>Overview and Planner</h3><p>The two screens people open most, and the biggest visible change.</p></div><ul><li>AI brief, ink hero tile, week strip, what worked</li><li>Calendar thumbnails and drag to reschedule</li><li>Best-time shading and the feed preview</li></ul></div>
+      <div class="phase"><div class="n">3<small>Create</small></div><div><h3>Content Lab and Composer</h3><p>Joins the idea-to-post loop into one flow.</p></div><ul><li>Merge Ideas and Hooks into one board with stages</li><li>Full-screen Composer with phone previews</li><li>Hook suggestions while typing, inline Pre-flight</li><li>Pre-flight grades, timeline and fix checklist</li></ul></div>
+      <div class="phase"><div class="n">4<small>Engage and learn</small></div><div><h3>Analytics, Inbox and Automations</h3><p>Closes the loop from results back to planning.</p></div><ul><li>Story-style Analytics with heatmap and post gallery</li><li>Three-pane Inbox with drafted replies</li><li>Visual When → If → Then automation builder</li></ul></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="oq">
+    <div class="sec-head col">
+      <div class="eyebrow">Decisions needed</div>
+      <h2 id="oq">Questions before building</h2>
+    </div>
+    <div class="qs col">
+      <div class="q"><b>Merge Ideas and Hooks into one Content Lab?</b><span>It simplifies navigation from nine items to eight, but changes where people find hooks today.</span></div>
+      <div class="q"><b>Full-screen Composer or keep the dialog?</b><span>Full screen fits the previews and inline checks. The dialog is faster for quick text posts. Both could exist, with the dialog for text-only posts.</span></div>
+      <div class="q"><b>How much should the AI do on its own?</b><span>This proposal keeps AI to suggestions and drafts that you approve. Auto-scheduling or auto-replying would be a separate decision.</span></div>
+      <div class="q"><b>Where to start?</b><span>Phase 2 gives the biggest visible change soonest. Phase 3 delivers the most value for daily use.</span></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="src">
+    <div class="sec-head col"><div class="eyebrow">Sources</div><h2 id="src" style="font-size:32px">Research references</h2></div>
+    <ul class="sources">
+      <li><a href="https://later.com/instagram-scheduler/visual-instagram-planner/" target="_blank" rel="noopener">Later: Visual Instagram planner</a></li>
+      <li><a href="https://buffer.com/create" target="_blank" rel="noopener">Buffer: Create space</a></li>
+      <li><a href="https://buffer.com/features/social-media-content-planner" target="_blank" rel="noopener">Buffer: Content planner</a></li>
+      <li><a href="https://help.metricool.com/en/article/best-time-to-post-on-social-media-in-metricool-hj3rgj/" target="_blank" rel="noopener">Metricool: Best time to post</a></li>
+      <li><a href="https://metricool.com/best-social-media-scheduling-tools/" target="_blank" rel="noopener">Metricool: Best scheduling tools 2026</a></li>
+      <li><a href="https://sproutsocial.com/it/features/smart-inbox/" target="_blank" rel="noopener">Sprout Social: Smart Inbox</a></li>
+      <li><a href="https://help.opus.pro/docs/article/virality-score" target="_blank" rel="noopener">OpusClip: Virality score</a></li>
+      <li><a href="https://marcandrews.com/?p=6263" target="_blank" rel="noopener">What the OpusClip score measures</a></li>
+      <li><a href="https://procreator.design/blog/saas-product-design-redesign-dashboard/" target="_blank" rel="noopener">SaaS dashboard UX best practices and trends</a></li>
+      <li><a href="https://saasui.design/blog/7-saas-ui-design-trends-2026" target="_blank" rel="noopener">7 SaaS UI design trends for 2026</a></li>
+      <li><a href="https://postiz.com/blog/social-media-scheduler" target="_blank" rel="noopener">Postiz: Free scheduling tools 2026</a></li>
+    </ul>
+  </section>
+
+  <footer>Motion redesign proposal · mockups use placeholder content and sample figures, not real account data.</footer>
+</main>
+
+<script>
+(function () {
+  // Best-time heatmap: sample engagement by weekday and hour slot (illustrative).
+  var heat = document.getElementById('heat');
+  if (!heat) return;
+  var days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  var slots = ['8am', '11am', '2pm', '5pm', '7pm', '9pm'];
+  var v = [
+    [18, 22, 20, 24, 16, 30, 28],
+    [26, 30, 28, 32, 22, 34, 30],
+    [20, 24, 22, 20, 18, 26, 22],
+    [44, 52, 48, 46, 34, 28, 30],
+    [70, 82, 76, 66, 48, 40, 52],
+    [40, 46, 42, 38, 30, 44, 48]
+  ];
+  var html = '<span></span>' + days.map(function (d) { return '<span class="hl">' + d + '</span>'; }).join('');
+  slots.forEach(function (s, r) {
+    html += '<span class="tl">' + s + '</span>';
+    v[r].forEach(function (x) { html += '<span class="cell" style="--v:' + x + '%"></span>'; });
+  });
+  heat.innerHTML = html;
+})();
+</script>

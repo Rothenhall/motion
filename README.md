@@ -50,10 +50,25 @@ The frontend uses [shadcn/ui](https://ui.shadcn.com) on Tailwind CSS v4 for inte
 - Tailwind preflight is off and the hand-written styles live in a `legacy` layer below utilities, so existing pages render as before and utilities win where both apply.
 - Use `useConfirm()` (`components/ConfirmDialog.tsx`) instead of `window.confirm`, `toast` from `sonner` for action results, and `lib/format.ts` for channel, format and status labels.
 
+## Studio layout
+
+The app is organised as Studio (Overview, Planner, Content Lab, Pre-flight), Engage (Inbox, Automations) and Measure
+(Analytics, Connections). The pieces shared between screens live in `frontend/components/studio/` (thumbnails, phone
+previews, the post drawer, sparklines, insight lines); `frontend/lib/posts.ts` and `lib/media.ts` hold the post helpers.
+
+- **Planner**: a week or month calendar with thumbnails. Drag a scheduled post to another slot to move it (with Undo).
+  Best times are shaded once three published posts have insights. A feed preview shows how the Instagram grid will look.
+- **Drafts**: the composer autosaves as you type (`/drafts`). Closing it keeps what you wrote; Overview lists drafts
+  to continue. Scheduling a post deletes its draft in the same transaction.
+- **Inbox**: comments show the post they were left on (matched on the platform post id). Replying marks the comment done.
+- Editing a scheduled post is `PATCH /posts/:id` (time, caption, media). The post keeps its id, so insights stay attached.
+  `GET /analytics` returns `postStats` for every measured post, which feeds the best-time and rhythm views.
+
 ## AI ideas and hook library
 
-`/ideas` generates post ideas (hook, angle, format, caption, hashtags) from a brand profile, and `/hooks` is a
-hook library: 32 starter hooks, AI-written hooks for a topic, your own, and favorites. Both call a model on
+Content Lab (`/lab`) is a board of AI post ideas (hook, angle, format, caption, hashtags) written from a brand profile,
+with a Fresh, Saved and Used column you can drag between, plus the hook library: 32 starter hooks, AI-written hooks for a
+topic, your own, and favorites. `/ideas` and `/hooks` redirect there. Both call a model on
 [OpenRouter](https://openrouter.ai) with strict JSON-schema output (`backend/src/ai/`). Set `OPENROUTER_API_KEY`
 in `backend/.env`; `OPENROUTER_MODEL` overrides the default `z-ai/glm-5.3-flash` (pick a model that accepts images
 and supports structured outputs). Turning on autopilot in the brand profile adds fresh ideas every day at 7am.
@@ -74,6 +89,14 @@ well they open.
   a muted-autoplay check, each flagged moment tagged with its likely cause; the AI turns that, plus frames grabbed
   at those moments, into timestamped advice. Set `TRIBE_SERVICE_URL` and `TRIBE_SERVICE_TOKEN` in
   `backend/.env`; without them the check uses the AI review alone.
+- A finished check opens as a workspace (`frontend/components/preflight/review/`). On a wide screen it fits the window
+  with no page scroll: the reel beside the simulated brain, a scrollable timeline docked underneath (it follows the
+  playhead; "Fit whole reel" shows all of it), and a details panel that scrolls on its own. Everything shares one
+  playhead. The brain carries labels for the systems that are above or below usual at that second, and the Brain tab
+  explains each system and how the Attention number is made (the service's own definition, in
+  `tribe-service/networks.py` and `scoring.py`). Label positions are general locations on the cortex, not exact parcels.
+- A toast announces a check when it finishes, wherever you are in the app, and the composer shows the score for media
+  that already has a check.
 - All results are estimates and the UI says so. The TRIBE scores are not yet calibrated against real results.
   TRIBE v2 is CC BY-NC 4.0: internal R&D only, not for paying users without a license from Meta.
 
@@ -83,3 +106,30 @@ well they open.
 - Each user sees only the channels they connected, and the posts, automations and inbox that belong to them. Channels connected before user accounts existed go to the first user who registers.
 - Meta webhook deliveries must carry a valid `X-Hub-Signature-256` made with `META_APP_SECRET` or `META_IG_APP_SECRET`; anything else gets a 401.
 - Meta access tokens are stored encrypted with `TOKEN_ENCRYPTION_KEY` (AES-256-GCM). Existing plaintext tokens are encrypted on the next boot. Keep the key stable: losing it means reconnecting every channel.
+- Sign-in and sign-up allow 10 attempts a minute per address, and every other route 600 a minute (`429` beyond that). The Meta webhook is exempt, since it is verified by signature. Behind a tunnel or proxy, set `TRUST_PROXY=1` (the number of proxies in front) so each visitor is counted separately instead of all sharing the proxy's address.
+- Responses carry standard security headers (helmet). `Cross-Origin-Resource-Policy` is `cross-origin` on purpose: the web app shows uploaded media from the API on another origin.
+
+## Operations
+
+- **Unused uploads.** Files nobody points at (removed posts, abandoned composers, deleted accounts) pile up in the uploads volume. A nightly job finds the ones that no post, draft or pre-flight check uses and that are older than `UPLOAD_CLEANUP_DAYS` (default 14). It only logs what it would remove until you set `UPLOAD_CLEANUP=on`, so read the log first (`docker compose logs backend | grep "unused uploads"`).
+- **Publishing needs a reachable `PUBLIC_BASE_URL`.** Meta downloads media from it when a post goes out. If the tunnel is down, scheduled posts fail. The web app previews uploads from the API directly, so previews still work.
+- **Backups.** Postgres lives in the `pgdata` Docker volume and nothing exports it. Take dumps yourself (`docker compose exec db pg_dump -U motion motion > backup.sql`).
+
+## Development
+
+```bash
+# backend: needs Postgres (docker compose up -d db) and ffmpeg on PATH for the pre-flight tests
+cd backend && npm test && npm run typecheck
+
+# frontend
+cd frontend && npm test && npm run lint && npm run typecheck
+```
+
+CI (`.github/workflows/ci.yml`) runs both on every pull request.
+
+**Sample workspace.** To look around, or check a screen, without a real account, create a demo user with a month of sample numbers, posts, drafts and ideas. Its channel holds a fake token and the posts are scheduled days ahead, so nothing can be published to a real platform:
+
+```bash
+docker compose exec -e DEMO_SEED=yes backend node dist/scripts/seed-demo.js
+# sign in as demo@motion.test (the password is in backend/src/scripts/seed-demo.ts). Running it again resets only that user.
+```
