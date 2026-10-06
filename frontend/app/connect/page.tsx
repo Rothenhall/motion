@@ -10,9 +10,9 @@ import { errorText } from '../../lib/format';
 type Account = { id: string; provider: string; externalId: string; name?: string | null; createdAt: string };
 
 const providers = [
-  { id: 'instagram', title: 'Instagram', desc: 'Posts, Reels, comments and DMs — synced automatically.', icon: 'instagram' as const, tone: 'instagram', match: 'instagram' },
-  { id: 'facebook', title: 'Facebook', desc: 'Pages, publishing and community inbox — synced automatically.', icon: 'facebook' as const, tone: 'facebook', match: 'facebook_page' },
-  { id: 'threads', title: 'Threads', desc: 'Text-first publishing — synced automatically.', icon: 'threads' as const, tone: 'threads', match: 'threads' },
+  { id: 'instagram', title: 'Instagram', desc: 'Posts, Reels, comments and DMs, synced automatically.', icon: 'instagram' as const, tone: 'instagram', match: 'instagram' },
+  { id: 'facebook', title: 'Facebook', desc: 'Pages, publishing and community inbox, synced automatically.', icon: 'facebook' as const, tone: 'facebook', match: 'facebook_page' },
+  { id: 'threads', title: 'Threads', desc: 'Text-first publishing, synced automatically.', icon: 'threads' as const, tone: 'threads', match: 'threads' },
 ];
 
 function label(provider: string) { return provider === 'facebook_page' ? 'Facebook' : provider === 'threads' ? 'Threads' : 'Instagram'; }
@@ -48,7 +48,7 @@ export default function Connect() {
     const account = query.get('account');
     const error = query.get('error');
     if (connected) {
-      setNotice(`${account || 'Channel'} connected — recent posts and stats are syncing in.`);
+      setNotice(`${account || 'Channel'} connected. Recent posts and stats are syncing in.`);
       setIsError(false);
     } else if (error) {
       setNotice(error);
@@ -77,7 +77,7 @@ export default function Connect() {
 
   return <div>
     <section className="page-intro">
-      <div><div className="eyebrow">Channel management</div><h1>Bring your channels together</h1><p>Connect once — Motion syncs your posts, inbox and stats automatically.</p></div>
+      <div><div className="eyebrow">Channel management</div><h1>Bring your channels together</h1><p>Connect once and Motion syncs your posts, inbox and stats automatically.</p></div>
       <div className="page-intro-actions"><span className={accounts.length ? 'live-pill' : 'status-pill status-draft'}>{accounts.length > 0 && <i aria-hidden="true" />}{accounts.length} connected</span></div>
     </section>
 
@@ -113,7 +113,7 @@ export default function Connect() {
     </div>
 
     <section className="card data-card" id="connected-accounts" aria-labelledby="accounts-title">
-      <div className="card-header"><div><h2 className="card-title" id="accounts-title">Connected accounts <span className="list-count">{accounts.length}</span></h2><p className="card-subtitle">Tokens refresh automatically — you never touch them.</p></div></div>
+      <div className="card-header"><div><h2 className="card-title" id="accounts-title">Connected accounts <span className="list-count">{accounts.length}</span></h2><p className="card-subtitle">Tokens refresh automatically, so you never touch them.</p></div></div>
       <div className="table-wrap">
         <table className="data-table">
           <thead><tr><th scope="col">Account</th><th scope="col">Added</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
@@ -128,7 +128,7 @@ export default function Connect() {
           </tbody>
         </table>
         {loading && <div className="skeleton skeleton-row" aria-hidden="true" />}
-        {!loading && !accounts.length && <div className="empty-state"><div className="empty-icon"><Icon name="link" size={18} /></div><strong>No channels connected</strong>Connect Instagram, Facebook, or Threads above — everything syncs on its own.</div>}
+        {!loading && !accounts.length && <div className="empty-state"><div className="empty-icon"><Icon name="link" size={18} /></div><strong>No channels connected</strong>Connect Instagram, Facebook, or Threads above and everything syncs on its own.</div>}
       </div>
     </section>
   </div>;

@@ -7,6 +7,7 @@ import { useConfirm } from '../../components/ConfirmDialog';
 import { NewCheckDialog, Prefill } from '../../components/preflight/NewCheckDialog';
 import { busy, Check, failToast, KIND_LABELS, PLATFORMS, shortDate, StatusPill } from '../../components/preflight/shared';
 import { api } from '../../lib/api';
+import { plain } from '../../lib/text';
 
 /** One list row: a single check, or every version of a comparison folded together. */
 type Row = { key: string; href: string; title: string; detail: string; platform: string; createdAt: string; status: Pick<Check, 'status' | 'stage'>; hook: number | null; ids: string[] };
@@ -31,8 +32,8 @@ function rows(checks: Check[]): Row[] {
     } else {
       out.push({
         key: c.id, href: `/preflight/${c.id}`,
-        title: c.label || c.verdict || (busy(c) ? `${KIND_LABELS[c.kind]} check` : c.status === 'FAILED' ? 'Check failed' : 'Untitled check'),
-        detail: c.label && c.verdict ? c.verdict : KIND_LABELS[c.kind],
+        title: c.label || plain(c.verdict) || (busy(c) ? `${KIND_LABELS[c.kind]} check` : c.status === 'FAILED' ? 'Check failed' : 'Untitled check'),
+        detail: c.label && c.verdict ? plain(c.verdict) : KIND_LABELS[c.kind],
         platform: c.platform, createdAt: c.createdAt, status: c, hook: c.hook ? Math.round(c.hook.score) : null, ids: [c.id],
       });
     }
@@ -115,7 +116,7 @@ export default function PreflightList() {
               <td>{PLATFORMS.find((p) => p.id === row.platform)?.label}</td>
               <td className="pf-row-date">{shortDate(row.createdAt)}</td>
               <td><StatusPill check={row.status} /></td>
-              <td>{row.hook != null ? <strong>{row.hook}</strong> : <span className="pf-row-detail">—</span>}</td>
+              <td>{row.hook != null ? <strong>{row.hook}</strong> : <span className="pf-row-detail">n/a</span>}</td>
               <td className="pf-row-actions"><button className="icon-btn" type="button" aria-label="Delete" onClick={(e) => { e.stopPropagation(); remove(row); }}><Icon name="trash" size={13} /></button></td>
             </tr>)}
           </tbody>

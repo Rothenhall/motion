@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { Icon } from '../../../components/Icons';
 import { useConfirm } from '../../../components/ConfirmDialog';
+import ReviewRoom from '../../../components/preflight/review/ReviewRoom';
 import { busy, Check, CheckView, failToast, KIND_LABELS, shortDate, SimulationOn, StatusPill } from '../../../components/preflight/shared';
 import { api } from '../../../lib/api';
 
@@ -44,18 +45,22 @@ export default function PreflightDetail({ params }: { params: { id: string } }) 
     try { await api(`/preflight/${params.id}`, { method: 'DELETE' }); router.push('/preflight'); } catch (error) { failToast(error, 'Could not delete this check.'); }
   };
 
+  const ready = !!check && check.status === 'DONE' && !!check.report;
+
   return <SimulationOn.Provider value={simulationOn}><div>
     {confirmDialog}
-    <div className="pf-detail-bar">
+    {!ready && <div className="pf-detail-bar">
       <Link className="btn btn-ghost btn-sm" href="/preflight"><Icon name="arrow-left" size={14} /> All checks</Link>
       {check && <div className="pf-detail-meta">
         <span>{KIND_LABELS[check.kind]} · checked {shortDate(check.createdAt)}</span>
         <StatusPill check={check} />
         <button className="icon-btn" type="button" aria-label="Delete check" onClick={remove}><Icon name="trash" size={13} /></button>
       </div>}
-    </div>
-    <section className="card data-card" aria-live="polite">
-      {check ? <CheckView check={check} onRetry={retry} onChanged={load} /> : <div className="empty-state" style={{ marginTop: 22 }}>{missing ? 'This check could not be found.' : 'Loading…'}</div>}
-    </section>
+    </div>}
+    {check && ready
+      ? <ReviewRoom check={check} onChanged={load} onDelete={remove} />
+      : <section className="card data-card" aria-live="polite">
+        {check ? <CheckView check={check} onRetry={retry} onChanged={load} /> : <div className="empty-state" style={{ marginTop: 22 }}>{missing ? 'This check could not be found.' : 'Loading…'}</div>}
+      </section>}
   </div></SimulationOn.Provider>;
 }

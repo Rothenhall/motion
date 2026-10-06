@@ -1,0 +1,8 @@
+{
+  "extends": "next/core-web-vitals",
+  "rules": {
+    // Uploaded photos come from the API or the public tunnel at sizes the user chose; next/image would need every host
+    // whitelisted and adds nothing for previews this small.
+    "@next/next/no-img-element": "off"
+  }
+}

@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { Icon } from './Icons';
 import CommandPalette from './CommandPalette';
+import PreflightAlerts from './PreflightAlerts';
 import { api, getToken, signOut } from '../lib/api';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import {
@@ -17,31 +18,32 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
-const primaryLinks = [
+const studioLinks = [
   { href: '/', label: 'Overview', icon: 'grid' as const },
   { href: '/planner', label: 'Planner', icon: 'calendar' as const },
-  { href: '/ideas', label: 'Ideas', icon: 'bulb' as const },
-  { href: '/hooks', label: 'Hook library', icon: 'sparkles' as const },
+  { href: '/lab', label: 'Content Lab', icon: 'bulb' as const },
   { href: '/preflight', label: 'Pre-flight check', icon: 'gauge' as const },
-  { href: '/automations', label: 'Automations', icon: 'zap' as const },
-  { href: '/comments', label: 'Inbox', icon: 'inbox' as const },
 ];
 
-const manageLinks = [
-  { href: '/connect', label: 'Connections', icon: 'link' as const },
+const engageLinks = [
+  { href: '/comments', label: 'Inbox', icon: 'inbox' as const },
+  { href: '/automations', label: 'Automations', icon: 'zap' as const },
+];
+
+const measureLinks = [
   { href: '/analytics', label: 'Analytics', icon: 'chart' as const },
+  { href: '/connect', label: 'Connections', icon: 'link' as const },
 ];
 
 const titles: Record<string, { eyebrow: string; title: string }> = {
-  '/': { eyebrow: 'Workspace', title: 'Overview' },
-  '/planner': { eyebrow: 'Workspace', title: 'Planner' },
-  '/ideas': { eyebrow: 'Create', title: 'Ideas' },
-  '/hooks': { eyebrow: 'Create', title: 'Hook library' },
-  '/preflight': { eyebrow: 'Create', title: 'Pre-flight check' },
-  '/automations': { eyebrow: 'Engagement', title: 'Automations' },
-  '/comments': { eyebrow: 'Engagement', title: 'Inbox' },
-  '/connect': { eyebrow: 'Manage', title: 'Connections' },
-  '/analytics': { eyebrow: 'Manage', title: 'Analytics' },
+  '/': { eyebrow: 'Studio', title: 'Overview' },
+  '/planner': { eyebrow: 'Studio', title: 'Planner' },
+  '/lab': { eyebrow: 'Studio', title: 'Content Lab' },
+  '/preflight': { eyebrow: 'Studio', title: 'Pre-flight check' },
+  '/automations': { eyebrow: 'Engage', title: 'Automations' },
+  '/comments': { eyebrow: 'Engage', title: 'Inbox' },
+  '/connect': { eyebrow: 'Measure', title: 'Connections' },
+  '/analytics': { eyebrow: 'Measure', title: 'Analytics' },
 };
 
 function initialTheme(): boolean {
@@ -70,10 +72,12 @@ function SidebarContent({ isCurrent, onNavigate }: { isCurrent: (href: string) =
         <span className="brand-beta">BETA</span>
       </div>
       <nav className="sidebar-nav" aria-label="Main navigation">
-        <div className="nav-label">Workspace</div>
-        {primaryLinks.map(renderLink)}
-        <div className="nav-label nav-label-manage">Manage</div>
-        {manageLinks.map(renderLink)}
+        <div className="nav-label">Studio</div>
+        {studioLinks.map(renderLink)}
+        <div className="nav-label nav-label-manage">Engage</div>
+        {engageLinks.map(renderLink)}
+        <div className="nav-label nav-label-manage">Measure</div>
+        {measureLinks.map(renderLink)}
       </nav>
     </>
   );
@@ -166,6 +170,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="app-shell">
+      <PreflightAlerts />
       <a className="skip-link" href="#main-content">Skip to content</a>
 
       <aside className="sidebar" aria-label="Primary">
@@ -177,7 +182,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* Mobile navigation: a real modal drawer, so focus stays inside and Esc closes it. */}
       <Sheet open={navOpen} onOpenChange={setNavOpen}>
-        <SheetContent side="left" className="sidebar-sheet w-[280px] gap-0 border-0 bg-[linear-gradient(180deg,var(--navy)_0%,var(--navy-2)_100%)] p-[22px_14px_16px] text-[#e8ecf5] sm:max-w-[280px]">
+        <SheetContent side="left" className="sidebar-sheet w-[280px] gap-0 border-0 bg-[var(--surface)] p-[22px_14px_16px] text-[var(--text-1)] sm:max-w-[280px]">
           <SheetTitle className="sr-only">Navigation</SheetTitle>
           <SheetDescription className="sr-only">Go to another part of Motion</SheetDescription>
           <SidebarContent isCurrent={isCurrent} onNavigate={() => setNavOpen(false)} />

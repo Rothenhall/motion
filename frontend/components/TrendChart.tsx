@@ -1,8 +1,9 @@
 'use client';
 
+import { compactNumber } from '../lib/format';
+
 export type TrendPoint = { date: string; views: number; engagements: number };
 
-const compact = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 });
 function shortDate(iso: string) { return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: '2-digit', timeZone: 'UTC' }); }
 
 /** Two series on one chart, each scaled to its own max so engagement stays readable next to views. */
@@ -18,7 +19,7 @@ export default function TrendChart({ series, id = 'trend' }: { series: TrendPoin
   const totalViews = series.reduce((sum, s) => sum + s.views, 0);
   const totalEng = series.reduce((sum, s) => sum + s.engagements, 0);
   return (
-    <svg viewBox="0 0 760 210" role="img" aria-label={`Daily views and engagements over ${series.length} days: ${compact.format(totalViews)} views in total (peak ${compact.format(maxViews)} a day), ${compact.format(totalEng)} engagements (peak ${compact.format(maxEng)} a day).`}>
+    <svg viewBox="0 0 760 210" role="img" aria-label={`Daily views and engagements over ${series.length} days: ${compactNumber(totalViews)} views in total (peak ${compactNumber(maxViews)} a day), ${compactNumber(totalEng)} engagements (peak ${compactNumber(maxEng)} a day).`}>
       <defs><linearGradient id={`${id}-fill`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="var(--brand-600)" stopOpacity=".18" /><stop offset="100%" stopColor="var(--brand-600)" stopOpacity="0" /></linearGradient></defs>
       {[20, 70, 120, 170].map((gy) => <line key={gy} className="chart-grid-line" x1="0" y1={gy} x2="760" y2={gy} />)}
       {series.length > 1 && <path d={`${views} V190 H0Z`} fill={`url(#${id}-fill)`} />}

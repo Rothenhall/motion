@@ -32,3 +32,10 @@ export function statusName(status: string) {
 export function errorText(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
+
+const compactFormat = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 });
+/** 1,234 becomes 1.2K: how every chart and tile writes a big number. */
+export const compactNumber = (n: number) => compactFormat.format(n);
+
+/** Seconds as m:ss, for video time. */
+export const fmtClock = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;

@@ -1,11 +1,13 @@
 'use client';
 
+import { Select } from '@/components/ui/select';
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Icon } from '../Icons';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog';
 import { api } from '../../lib/api';
-import { failToast, isVideo, mediaSrc, PLATFORMS, uploadFiles } from './shared';
+import { mediaSrc } from '../../lib/media';
+import { failToast, isVideo, PLATFORMS, uploadFiles } from './shared';
 
 type Draft = { mediaUrls: string[]; text: string };
 export type Prefill = { mediaUrls: string[]; caption: string; platform: string };
@@ -81,7 +83,7 @@ export function NewCheckDialog({ open, onOpenChange, onQueued, aiReady, prefill 
           <button type="button" role="tab" aria-selected={mode === 'single'} className={`toolbar-filter ${mode === 'single' ? 'active' : ''}`} onClick={() => switchMode('single')}>One post</button>
           <button type="button" role="tab" aria-selected={mode === 'compare'} className={`toolbar-filter ${mode === 'compare' ? 'active' : ''}`} onClick={() => switchMode('compare')}>Compare versions</button>
         </div>
-        <div className="field"><label className="field-label" htmlFor="pf-platform">Posting to</label><select id="pf-platform" value={platform} onChange={(e) => setPlatform(e.target.value)}>{PLATFORMS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}</select></div>
+        <div className="field"><label className="field-label" htmlFor="pf-platform">Posting to</label><Select id="pf-platform" value={platform} onChange={(e) => setPlatform(e.target.value)}>{PLATFORMS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}</Select></div>
 
         {drafts.map((draft, i) => {
           const video = draft.mediaUrls.some(isVideo);

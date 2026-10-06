@@ -1,88 +1,136 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { toast } from 'sonner';
 import { Icon } from '../components/Icons';
 import Composer from '../components/Composer';
-import TrendChart, { TrendPoint } from '../components/TrendChart';
+import AreaChart from '../components/studio/AreaChart';
+import type { TrendPoint } from '../components/TrendChart';
+import Insight from '../components/studio/Insight';
+import PhonePreview from '../components/studio/PhonePreview';
+import PostDrawer from '../components/studio/PostDrawer';
+import Spark from '../components/studio/Spark';
+import Thumb from '../components/studio/Thumb';
 import { api } from '../lib/api';
-import { errorText, formatName, platformFor, platformName } from '../lib/format';
+import { compactNumber, errorText, formatName, platformFor, platformName } from '../lib/format';
+import { addDays, dayKey, fmtDay, fmtTime, needsMedia, postPlatform, startOfDay, startOfWeek, type Draft, type Post } from '../lib/posts';
 
 type Account = { id: string; provider: string; externalId: string; name?: string | null };
-type Post = { id: string; platform: string; mediaType: string; caption?: string | null; scheduledAt: string; status: string; error?: string | null; account?: Account };
 type DashboardData = { stats: { scheduled: number; published: number; failed: number }; upcomingPosts: Post[]; accounts: Account[]; automationCount: number; activeAutomationCount: number };
-type Analytics = { hasInsights: boolean; series: TrendPoint[]; totals: { engagementRate: number | null; engagementRateChange: number | null } };
+type TopPost = { id: string; platform: string; caption?: string | null; mediaType: string; mediaUrls?: string; views: number | null; engagements: number | null };
+type Analytics = {
+  hasInsights: boolean;
+  series: TrendPoint[];
+  totals: { views: number; viewsChange: number | null; engagementRate: number | null; engagementRateChange: number | null; engagements: number };
+  topPosts: TopPost[];
+};
 
 const emptyDashboard: DashboardData = { stats: { scheduled: 0, published: 0, failed: 0 }, upcomingPosts: [], accounts: [], automationCount: 0, activeAutomationCount: 0 };
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' }).format(new Date(value));
-}
-
-function formatTime(value: string) {
-  return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(new Date(value));
-}
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 export default function Home() {
   const [data, setData] = useState<DashboardData>(emptyDashboard);
+  const [posts, setPosts] = useState<Post[]>([]);
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [composerOpen, setComposerOpen] = useState(false);
-  const [handoff, setHandoff] = useState<{ caption?: string; day?: string | null }>({});
+  const [handoff, setHandoff] = useState<{ caption?: string; day?: string | null; idea?: string }>({});
+  const [open, setOpen] = useState<Post | null>(null);
+  const [drafts, setDrafts] = useState<Draft[]>([]);
+  const [activeDraft, setActiveDraft] = useState<Draft | null>(null);
 
-  const load = async () => {
+  const loadDrafts = useCallback(() => { api<Draft[]>('/drafts').then((d) => setDrafts(d || [])).catch(() => setDrafts([])); }, []);
+
+  const load = useCallback(async () => {
     setLoadError('');
     try {
-      setData(await api('/dashboard'));
+      const [dash, list] = await Promise.all([api<DashboardData>('/dashboard'), api<Post[]>('/posts')]);
+      setData(dash); setPosts(list);
     } catch (error) {
       setLoadError(errorText(error, 'Could not load your workspace.'));
     } finally { setLoading(false); }
     api<Analytics>('/analytics?days=30').then(setAnalytics).catch(() => setAnalytics(null));
-  };
+    loadDrafts();
+  }, [loadDrafts]);
 
   useEffect(() => {
     load();
     // Ideas, hooks and the planner open the composer through ?compose=true&caption=…&date=…
     const params = new URLSearchParams(window.location.search);
     if (params.get('compose') === 'true') {
-      setHandoff({ caption: params.get('caption') || undefined, day: params.get('date') });
+      setHandoff({ caption: params.get('caption') || undefined, day: params.get('date'), idea: params.get('idea') || undefined });
       setComposerOpen(true);
-      // Drop the params so a refresh doesn't reopen the composer.
       window.history.replaceState(null, '', '/');
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [load]);
 
   const greeting = useMemo(() => {
     const h = new Date().getHours();
     return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
   }, []);
   const todayLabel = useMemo(() => new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric' }).format(new Date()), []);
+  const openComposer = (day?: string) => { setHandoff(day ? { day } : {}); setActiveDraft(null); setComposerOpen(true); };
+  const openDraft = (d: Draft) => { setHandoff({}); setActiveDraft(d); setComposerOpen(true); };
+  const removeDraft = async (d: Draft) => {
+    try { await api(`/drafts/${d.id}`, { method: 'DELETE' }); setDrafts((cur) => cur.filter((x) => x.id !== d.id)); toast('Draft deleted'); }
+    catch (e) { toast.error(errorText(e, 'Could not delete this draft.')); }
+  };
 
-  // Same 30-day figure the Analytics page shows, from synced Meta insights.
-  const engagement = analytics?.hasInsights ? analytics.totals.engagementRate : null;
-  const engagementChange = analytics?.hasInsights ? analytics.totals.engagementRateChange : null;
-  const stats = [
-    { label: 'Scheduled posts', value: data.stats.scheduled, hint: 'waiting in your queue', icon: 'calendar' as const, href: '/planner' },
-    { label: 'Published this month', value: data.stats.published, hint: data.stats.failed ? `${data.stats.failed} failed` : 'no failures', icon: 'send' as const, href: '/planner', warn: data.stats.failed > 0 },
-    { label: 'Engagement rate', value: engagement == null ? '—' : `${engagement}%`, hint: engagement == null ? 'sync insights to see this' : 'last 30 days, all channels', icon: 'chart' as const, href: '/analytics', change: engagementChange },
-    { label: 'Active automations', value: data.activeAutomationCount, hint: `of ${data.automationCount} rule${data.automationCount === 1 ? '' : 's'}`, icon: 'zap' as const, href: '/automations' },
-  ];
+  const now = Date.now();
+  const queue = useMemo(() => posts.filter((p) => p.status === 'SCHEDULED' && +new Date(p.scheduledAt) >= now - 60_000).sort((a, b) => +new Date(a.scheduledAt) - +new Date(b.scheduledAt)), [posts, now]);
+  const next = queue[0];
+  const todayKey = dayKey(new Date());
+  const today = queue.filter((p) => dayKey(new Date(p.scheduledAt)) === todayKey);
+  const failed = posts.filter((p) => p.status === 'FAILED');
+  const missingMedia = queue.filter(needsMedia);
+  const hasInsights = !!analytics?.hasInsights && analytics.series.length > 1;
+  const byId = useMemo(() => new Map(posts.map((p) => [p.id, p])), [posts]);
 
-  const hasInsights = !!analytics?.hasInsights && analytics.series.length > 0;
-  const openComposer = () => { setHandoff({}); setComposerOpen(true); };
+  // The brief is built from the queue and insights only, so every claim in it can be checked on screen.
+  const brief = useMemo(() => {
+    const parts: React.ReactNode[] = [];
+    let action: React.ReactNode = null;
+    if (failed.length) {
+      parts.push(<b key="f">{plural(failed.length, 'post')} failed to publish.</b>);
+      action = <Link className="st-chip dark" href="/planner">Review</Link>;
+    }
+    if (today.length) parts.push(<span key="t"><b>{plural(today.length, 'post')} {today.length === 1 ? 'goes' : 'go'} out today</b>, the next at {fmtTime(today[0].scheduledAt)}.</span>);
+    else if (next) parts.push(<span key="n">Nothing goes out today. Next up is <b>{fmtDay(next.scheduledAt)}</b> at {fmtTime(next.scheduledAt)}.</span>);
+    else parts.push(<span key="e">Your queue is empty, so nothing is scheduled to publish.</span>);
+    if (missingMedia.length) {
+      parts.push(<span key="m">{plural(missingMedia.length, 'scheduled post')} {missingMedia.length === 1 ? 'has' : 'have'} no media attached.</span>);
+      if (!action) action = <button className="st-chip dark" type="button" onClick={() => setOpen(missingMedia[0])}>Fix now</button>;
+    }
+    const coverage = new Set(queue.map((p) => dayKey(new Date(p.scheduledAt))));
+    const gap = [1, 2, 3].filter((n) => !coverage.has(dayKey(addDays(new Date(), n))));
+    if (queue.length && gap.length === 3) parts.push(<span key="g">The next three days are empty.</span>);
+    if (analytics?.hasInsights && analytics.totals.viewsChange != null && Math.abs(analytics.totals.viewsChange) >= 5) {
+      const up = analytics.totals.viewsChange > 0;
+      parts.push(<span key="v">Views are <b>{up ? 'up' : 'down'} {Math.abs(analytics.totals.viewsChange)}%</b> on the previous 30 days.</span>);
+    }
+    if (!action && !queue.length) action = <button className="st-chip dark" type="button" onClick={() => openComposer()}>Create a post</button>;
+    return { parts, action };
+  }, [failed, today, next, missingMedia, queue, analytics]);
+
+  const week = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(startOfWeek(new Date()), i)), []);
+  const weekPosts = (d: Date) => posts.filter((p) => dayKey(new Date(p.scheduledAt)) === dayKey(d));
+  const rateSeries = analytics?.series.map((s) => (s.views ? (s.engagements / s.views) * 100 : 0)) || [];
+  const covered = week.filter((d) => d >= startOfDay(new Date()) && weekPosts(d).length).length;
+  const daysLeft = week.filter((d) => d >= startOfDay(new Date())).length;
+  const worked = (analytics?.topPosts || []).slice(0, 6);
 
   return (
-    <div>
-      <section className="page-intro dashboard-intro">
+    <div className="ov">
+      <section className="page-intro dashboard-intro st-rise" style={{ ['--i' as string]: 0 }}>
         <div>
           <div className="eyebrow">{todayLabel}</div>
           <h1>{greeting}</h1>
           <p>Here&apos;s what&apos;s moving across your social channels.</p>
         </div>
         <div className="page-intro-actions">
-          <button className="btn" type="button" onClick={openComposer} aria-haspopup="dialog">
+          <button className="btn" type="button" onClick={() => openComposer()} aria-haspopup="dialog">
             <Icon name="plus" size={16} /> Create post
           </button>
         </div>
@@ -95,134 +143,143 @@ export default function Home() {
         </div>
       )}
 
-      <Composer
-        open={composerOpen}
-        onOpenChange={setComposerOpen}
-        accounts={data.accounts}
-        accountsLoading={loading}
-        initialCaption={handoff.caption}
-        initialDay={handoff.day}
-        onScheduled={load}
-      />
+      <Composer open={composerOpen} onOpenChange={(o) => { setComposerOpen(o); if (!o) setActiveDraft(null); }} draft={activeDraft} onDraftChange={loadDrafts} accounts={data.accounts} accountsLoading={loading} initialCaption={handoff.caption} initialDay={handoff.day} initialIdeaId={handoff.idea} onScheduled={load} />
+      <PostDrawer post={open} onOpenChange={(o) => !o && setOpen(null)} onChanged={load} />
 
-      <section className="stats-grid" aria-label="Workspace summary">
-        {stats.map((stat) => (
-          <Link className="stat-card card stat-link" key={stat.label} href={stat.href}>
-            <div className="stat-top"><span className="stat-label">{stat.label}</span><span className="stat-icon"><Icon name={stat.icon} size={15} /></span></div>
-            <div className={`stat-value ${loading ? 'skeleton' : ''}`}>{loading ? '00' : stat.value}</div>
-            <div className="stat-foot">
-              {stat.change != null && <span className={`stat-change ${stat.change >= 0 ? 'trend-up' : 'trend-warn'}`}>{stat.change >= 0 ? '+' : ''}{stat.change} pts</span>}
-              <span className={`stat-hint ${stat.warn ? 'stat-hint-warn' : ''}`}>{stat.hint}</span>
-            </div>
-          </Link>
-        ))}
+      <section className="ov-brief st-rise" style={{ ['--i' as string]: 1 }} aria-label="Today's brief">
+        {loading ? <div className="skeleton" style={{ height: 22 }} aria-hidden="true" /> : <Insight action={brief.action}>{brief.parts.map((p, i) => <span key={i}>{p} </span>)}</Insight>}
       </section>
 
-      <div className="dashboard-grid">
-        <section className="card chart-card" aria-labelledby="engagement-title">
-          <div className="card-header">
-            <div>
-              <h2 className="card-title" id="engagement-title">Performance, last 30 days</h2>
-              <p className="card-subtitle">{hasInsights ? 'Daily views and engagements across your channels.' : 'Your trend appears here after the first insights sync.'}</p>
-              {hasInsights && <div className="chart-legend" aria-hidden="true"><span className="legend-item"><i className="legend-dot" /> Views</span><span className="legend-item"><i className="legend-dot light" /> Engagements</span></div>}
+      <div className="ov-bento">
+        <section className="ov-hero st-rise" style={{ ['--i' as string]: 2 }} aria-labelledby="hero-t">
+          <div className="ov-hero-top">
+            <h2 id="hero-t" className="ov-eyebrow">Views · last 30 days</h2>
+            <Link className="ov-hero-link" href="/analytics">Analytics <Icon name="arrow-right" size={12} /></Link>
+          </div>
+          {loading ? <div className="skeleton ov-skel-dark" style={{ height: 170 }} aria-hidden="true" /> : hasInsights ? (
+            <>
+              <div className="ov-hero-num">
+                <strong>{compactNumber(analytics!.totals.views)}</strong>
+                {analytics!.totals.viewsChange != null && <span className={`ov-delta ${analytics!.totals.viewsChange >= 0 ? 'up' : 'down'}`}>{analytics!.totals.viewsChange >= 0 ? '+' : ''}{analytics!.totals.viewsChange}%</span>}
+              </div>
+              <p className="ov-hero-sub">{compactNumber(analytics!.totals.engagements)} engagements · dashed line shows engagements</p>
+              <AreaChart series={analytics!.series} id="ov" />
+            </>
+          ) : (
+            <div className="ov-hero-empty">
+              <strong>Your trend appears here</strong>
+              <p>{data.accounts.length ? 'Sync your channels from Analytics to pull views and engagement from Meta.' : 'Connect a channel and Motion starts collecting views and engagement.'}</p>
+              <Link className="btn btn-ghost" href={data.accounts.length ? '/analytics' : '/connect'}>{data.accounts.length ? 'Go to analytics' : 'Connect a channel'}</Link>
             </div>
-            <Link className="card-action" href="/analytics">Open analytics <Icon name="arrow-right" size={13} /></Link>
-          </div>
-          <div className="chart-wrap">
-            {analytics === null && loading ? <div className="skeleton" style={{ height: 180 }} aria-hidden="true" />
-              : hasInsights ? <TrendChart series={analytics!.series} id="overview" />
-                : (
-                  <div className="empty-state">
-                    <div className="empty-icon"><Icon name="chart" size={18} /></div>
-                    <strong>No insights yet</strong>
-                    {data.accounts.length ? 'Sync your channels from Analytics to pull views and engagement from Meta.' : 'Connect a channel and Motion will start collecting views and engagement.'}
-                    <br /><Link className="card-action" href={data.accounts.length ? '/analytics' : '/connect'}>{data.accounts.length ? 'Go to analytics' : 'Connect a channel'} <Icon name="arrow-right" size={13} /></Link>
-                  </div>
-                )}
-          </div>
+          )}
         </section>
 
-        <section className="card upcoming-card" aria-labelledby="upnext-title">
-          <div className="card-header">
-            <div><h2 className="card-title" id="upnext-title">Up next</h2><p className="card-subtitle">The next posts in your publishing queue.</p></div>
-            <Link className="card-action" href="/planner">View planner <Icon name="arrow-right" size={13} /></Link>
-          </div>
-          <ul className="upcoming-list">
-            {data.upcomingPosts.slice(0, 4).map((post) => {
-              const platform = platformFor(post.account?.provider || post.platform);
+        <section className="ov-next st-rise" style={{ ['--i' as string]: 3 }} aria-labelledby="next-t">
+          <div className="ov-tile-top"><h2 id="next-t" className="ov-eyebrow">Up next</h2>{next && <span className="st-chip">{fmtDay(next.scheduledAt)}</span>}</div>
+          {loading ? <div className="skeleton" style={{ height: 220 }} aria-hidden="true" /> : next ? (
+            <button type="button" className="ov-next-btn" onClick={() => setOpen(next)} aria-label={`Open details for the post scheduled ${fmtDay(next.scheduledAt)}`}>
+              <PhonePreview platform={postPlatform(next)} name={next.account?.name || platformName(postPlatform(next))} caption={next.caption} media={next.mediaUrls} mediaType={next.mediaType} id={next.id} ratio="1 / 1" />
+              <span className="ov-next-meta"><b>{fmtTime(next.scheduledAt)}</b> · {platformName(postPlatform(next))} · {formatName(next.mediaType)}</span>
+            </button>
+          ) : (
+            <div className="ov-empty">
+              <strong>Your queue is clear</strong>
+              <p>Schedule your next idea to keep momentum going.</p>
+              <button className="btn" type="button" onClick={() => openComposer()}>Schedule a post</button>
+            </div>
+          )}
+        </section>
+
+        <Link className="ov-stat st-rise" style={{ ['--i' as string]: 4 }} href="/analytics" aria-label="Engagement rate, open analytics">
+          <div className="ov-tile-top"><span className="ov-eyebrow">Engagement rate</span>{analytics?.totals.engagementRateChange != null && <span className={`st-chip ${analytics.totals.engagementRateChange >= 0 ? 'good' : 'warn'}`}>{analytics.totals.engagementRateChange >= 0 ? '+' : ''}{analytics.totals.engagementRateChange} pts</span>}</div>
+          <div className="ov-stat-num">{loading ? '…' : hasInsights && analytics!.totals.engagementRate != null ? `${analytics!.totals.engagementRate}%` : 'n/a'}</div>
+          <Spark values={rateSeries} />
+          <p className="ov-stat-note">{hasInsights ? 'Engagements per view, last 30 days.' : 'Sync insights to see this.'}</p>
+        </Link>
+
+        <Link className="ov-stat st-rise" style={{ ['--i' as string]: 5 }} href="/planner" aria-label="Queue health, open planner">
+          <div className="ov-tile-top"><span className="ov-eyebrow">Queue</span>{failed.length > 0 ? <span className="st-chip bad">{failed.length} failed</span> : missingMedia.length > 0 ? <span className="st-chip warn">{missingMedia.length} need media</span> : <span className="st-chip good">healthy</span>}</div>
+          <div className="ov-stat-num">{loading ? '…' : queue.length}<small>scheduled</small></div>
+          <div className="ov-cover" aria-hidden="true">{week.map((d) => <i key={dayKey(d)} className={weekPosts(d).length ? 'on' : d < startOfDay(new Date()) ? 'past' : ''} />)}</div>
+          <p className="ov-stat-note">{daysLeft ? `${covered} of ${daysLeft} days left this week have a post.` : 'Week complete.'} {data.stats.published} published this month.</p>
+        </Link>
+
+        <section className="ov-week st-rise" style={{ ['--i' as string]: 6 }} aria-labelledby="week-t">
+          <div className="ov-tile-top"><h2 id="week-t" className="ov-eyebrow">This week</h2><Link className="card-action" href="/planner">Open planner <Icon name="arrow-right" size={13} /></Link></div>
+          <div className="ov-days">
+            {week.map((d) => {
+              const k = dayKey(d); const items = weekPosts(d); const isToday = k === todayKey; const past = d < startOfDay(new Date());
               return (
-                <li className="upcoming-item" key={post.id}>
-                  <span className={`platform-avatar ${platform}`} aria-hidden="true"><Icon name={platform} size={16} /></span>
-                  <div className="upcoming-copy"><strong>{post.caption || `${formatName(post.mediaType)} post`}</strong><span>{platformName(platform)} · {formatDate(post.scheduledAt)}</span></div>
-                  <span className="upcoming-time">{formatTime(post.scheduledAt)}</span>
-                </li>
-              );
-            })}
-            {!loading && data.upcomingPosts.length === 0 && (
-              <li className="empty-state">
-                <div className="empty-icon"><Icon name="calendar" size={18} /></div>
-                <strong>Your queue is clear</strong>
-                Schedule your next idea to keep momentum going.
-                <br /><button className="card-action" type="button" onClick={openComposer}>Schedule a post <Icon name="arrow-right" size={13} /></button>
-              </li>
-            )}
-            {loading && [0, 1, 2].map((i) => <li key={i} className="skeleton skeleton-row" aria-hidden="true" />)}
-          </ul>
-        </section>
-      </div>
-
-      <div className="bottom-grid">
-        <section className="card health-card" aria-labelledby="health-title">
-          <div className="card-header">
-            <div><h2 className="card-title" id="health-title">Automations</h2><p className="card-subtitle">Rules that answer comments and send DMs for you.</p></div>
-            <Link className="card-action" href="/automations">Manage rules <Icon name="arrow-right" size={13} /></Link>
-          </div>
-          {loading ? <div className="skeleton" style={{ height: 80, margin: '16px 22px 22px' }} aria-hidden="true" />
-            : data.automationCount === 0 ? (
-              <div className="empty-state">
-                <div className="empty-icon"><Icon name="zap" size={18} /></div>
-                <strong>No rules yet</strong>
-                Reply to keyword comments and send a DM automatically.
-                <br /><Link className="card-action" href="/automations">Create your first rule <Icon name="arrow-right" size={13} /></Link>
-              </div>
-            ) : (
-              <div className="health-body">
-                <div className="automation-count"><strong>{data.activeAutomationCount}</strong><span>of {data.automationCount} live</span></div>
-                <div className="health-copy">
-                  <strong>{data.activeAutomationCount === data.automationCount ? 'Every rule is live' : data.activeAutomationCount === 0 ? 'All rules are paused' : `${data.automationCount - data.activeAutomationCount} paused`}</strong>
-                  <p>{data.activeAutomationCount
-                    ? `${data.activeAutomationCount} rule${data.activeAutomationCount === 1 ? ' is' : 's are'} watching comments and replying on your behalf.`
-                    : 'Nothing is replying automatically right now. Turn a rule back on from Automations.'}</p>
+                <div className={`ov-day ${isToday ? 'today' : ''} ${past ? 'past' : ''}`} key={k}>
+                  <div className="ov-day-h"><span>{new Intl.DateTimeFormat(undefined, { weekday: 'short' }).format(d)}</span><b>{d.getDate()}</b></div>
+                  {items.slice(0, 2).map((p) => (
+                    <button type="button" className="ov-mini" key={p.id} onClick={() => setOpen(p)} aria-label={`${p.caption || formatName(p.mediaType)}, ${fmtTime(p.scheduledAt)}`}>
+                      <Thumb id={p.id} media={p.mediaUrls} mediaType={p.mediaType} caption={p.caption} ratio="16 / 10" badge={p.status === 'FAILED' ? 'Failed' : needsMedia(p) ? 'No media' : undefined} />
+                      <span>{fmtTime(p.scheduledAt)}</span>
+                    </button>
+                  ))}
+                  {items.length > 2 && <span className="more-events">+{items.length - 2} more</span>}
+                  {!items.length && !past && <button type="button" className="ov-add" onClick={() => openComposer(k)} aria-label={`Schedule a post on ${fmtDay(d)}`}><Icon name="plus" size={13} /></button>}
                 </div>
-              </div>
-            )}
-        </section>
-        <section className="card channels-card" aria-labelledby="channels-title">
-          <div className="card-header">
-            <div><h2 className="card-title" id="channels-title">Connected channels</h2><p className="card-subtitle">Where Motion can publish and listen.</p></div>
-            <Link className="card-action" href="/connect">Manage <Icon name="arrow-right" size={13} /></Link>
-          </div>
-          <ul className="channel-list">
-            {data.accounts.slice(0, 3).map((account) => {
-              const platform = platformFor(account.provider);
-              return (
-                <li className="channel-row" key={account.id}>
-                  <span className={`platform-avatar ${platform}`} aria-hidden="true"><Icon name={platform} size={15} /></span>
-                  <div className="channel-copy"><strong>{account.name || account.externalId}</strong><span>{platformName(platform)}</span></div>
-                  <span className="channel-connected">Connected</span>
-                </li>
               );
             })}
-            {!loading && !data.accounts.length && (
-              <li className="empty-state">
-                <div className="empty-icon"><Icon name="link" size={18} /></div>
-                <strong>No channels yet</strong>
-                <Link className="card-action" href="/connect">Connect your first account <Icon name="arrow-right" size={13} /></Link>
-              </li>
-            )}
-            {loading && [0, 1].map((i) => <li key={i} className="skeleton skeleton-row" aria-hidden="true" />)}
-          </ul>
+          </div>
         </section>
+
+        <section className="ov-worked st-rise" style={{ ['--i' as string]: 7 }} aria-labelledby="worked-t">
+          <div className="ov-tile-top"><h2 id="worked-t" className="ov-eyebrow">What worked lately</h2><span className="muted ov-small">Top posts by engagement, last 30 days</span></div>
+          {worked.length ? (
+            <ol className="ov-gallery">
+              {worked.map((t, i) => {
+                const full = byId.get(t.id);
+                return (
+                  <li key={t.id}>
+                    <button type="button" className="ov-gpost" onClick={() => full && setOpen(full)} disabled={!full}>
+                      <Thumb id={t.id} media={t.mediaUrls ?? full?.mediaUrls} mediaType={t.mediaType} caption={t.caption} ratio="1 / 1" badge={i === 0 ? 'Top' : undefined} />
+                      <span className="ov-gmeta"><b>{t.views != null ? compactNumber(t.views) : 'n/a'}</b> views · {t.engagements != null ? compactNumber(t.engagements) : 'n/a'} eng.</span>
+                      <span className="ov-gcap">{t.caption || `${formatName(t.mediaType)} post`}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ol>
+          ) : (
+            <div className="ov-empty row">
+              <p>{loading ? 'Loading…' : 'Your best posts show up here once a published post has insights.'}</p>
+              {!loading && <Link className="btn btn-ghost" href="/analytics">Sync insights</Link>}
+            </div>
+          )}
+        </section>
+
+        {drafts.length > 0 && (
+          <section className="ov-drafts st-rise" style={{ ['--i' as string]: 8 }} aria-labelledby="drafts-t">
+            <div className="ov-tile-top"><h2 id="drafts-t" className="ov-eyebrow">Drafts</h2><span className="list-count">{drafts.length}</span></div>
+            <ul className="ov-draft-list">
+              {drafts.slice(0, 4).map((d) => (
+                <li key={d.id} className="ov-draft">
+                  <Thumb id={d.id} media={d.mediaUrls} mediaType={d.mediaType} caption={d.caption} className="ov-draft-thumb" />
+                  <button type="button" className="ov-draft-copy" onClick={() => openDraft(d)}>
+                    <strong>{d.caption ? d.caption.slice(0, 90) : `${formatName(d.mediaType)} draft`}</strong>
+                    <span>Edited {new Date(d.updatedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}{d.scheduledAt ? ` · planned for ${fmtDay(d.scheduledAt)}` : ''}</span>
+                  </button>
+                  <button className="btn btn-sm btn-soft" type="button" onClick={() => openDraft(d)}>Continue</button>
+                  <button className="icon-btn icon-btn-danger" type="button" onClick={() => removeDraft(d)} aria-label="Delete draft"><Icon name="trash" size={14} /></button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        <Link className="ov-slim st-rise" style={{ ['--i' as string]: 8 }} href="/automations">
+          <span className="ov-eyebrow">Automations</span>
+          <strong>{data.activeAutomationCount}<small> of {data.automationCount} live</small></strong>
+          <span className="ov-small muted">{data.automationCount === 0 ? 'Reply to keyword comments with a DM.' : data.activeAutomationCount === data.automationCount ? 'Every rule is watching comments.' : `${data.automationCount - data.activeAutomationCount} paused.`}</span>
+        </Link>
+        <Link className="ov-slim st-rise" style={{ ['--i' as string]: 9 }} href="/connect">
+          <span className="ov-eyebrow">Channels</span>
+          <strong>{data.accounts.length}<small> connected</small></strong>
+          <span className="ov-chans">{data.accounts.slice(0, 4).map((a) => <span className="st-chip" key={a.id}><Icon name={platformFor(a.provider)} size={12} />{a.name || a.externalId}</span>)}{!data.accounts.length && <span className="ov-small muted">Connect your first account.</span>}</span>
+        </Link>
       </div>
     </div>
   );

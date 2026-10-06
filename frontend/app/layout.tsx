@@ -1,12 +1,13 @@
 import './globals.css';
-import { Inter, Space_Grotesk } from 'next/font/google';
+import { Montserrat, JetBrains_Mono } from 'next/font/google';
 import AppShell from '../components/AppShell';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
 // Self-hosted by next/font: no render-blocking request to Google Fonts and no layout shift on load.
-const inter = Inter({ subsets: ['latin'], variable: '--font-inter', display: 'swap' });
-const grotesk = Space_Grotesk({ subsets: ['latin'], weight: ['500', '600', '700'], variable: '--font-grotesk', display: 'swap' });
+const montserrat = Montserrat({ subsets: ['latin'], variable: '--font-montserrat', display: 'swap' }); // variable font, so the in-between weights (425/525/625/725) render as designed
+
+const jetbrainsMono = JetBrains_Mono({ subsets: ['latin'], variable: '--font-jetbrains-mono', display: 'swap' }); // code blocks (Cailyx uses Geist Mono; Next 14 has no Geist, so JetBrains Mono stands in)
 
 export const metadata = {
   title: 'Motion',
@@ -15,8 +16,8 @@ export const metadata = {
 
 export const viewport = {
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#f5f6f8' },
-    { media: '(prefers-color-scheme: dark)', color: '#0b1120' },
+    { media: '(prefers-color-scheme: light)', color: '#f9f9f9' },
+    { media: '(prefers-color-scheme: dark)', color: '#1a1b1e' },
   ],
 };
 
@@ -24,7 +25,7 @@ const themeInit = `(function(){try{var t=localStorage.getItem('motion-theme');if
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${inter.variable} ${grotesk.variable}`} suppressHydrationWarning>
+    <html lang="en" className={`${montserrat.variable} ${jetbrainsMono.variable}`} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInit }} />
       </head>

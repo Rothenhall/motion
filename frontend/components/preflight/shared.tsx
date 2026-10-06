@@ -6,10 +6,14 @@ import { toast } from 'sonner';
 import { Icon } from '../Icons';
 import { API, api, authHeaders } from '../../lib/api';
 import type { BrainMap } from './BrainViewer';
+import type { BrainRegion } from './brainAnchors';
+import { fmtClock } from '../../lib/format';
+import { mediaSrc } from '../../lib/media';
+import { plain } from '../../lib/text';
 
-export type Rating = 'WEAK' | 'OK' | 'STRONG';
+type Rating = 'WEAK' | 'OK' | 'STRONG';
 export type Insight = { title: string; detail: string; fix: string; severity: 'HIGH' | 'MEDIUM' | 'LOW'; startSec: number | null; endSec: number | null; basis: string };
-export type Report = {
+type Report = {
   verdict: string;
   hook: { rating: Rating; score: number; reason: string };
   dimensions: { key: string; rating: Rating; note: string }[];
@@ -42,29 +46,19 @@ export type Group = { groupId: string; done: boolean; rankedBy: string; ranking:
 
 export const PLATFORMS = [{ id: 'instagram', label: 'Instagram' }, { id: 'facebook', label: 'Facebook' }, { id: 'threads', label: 'Threads' }];
 export const KIND_LABELS: Record<string, string> = { VIDEO: 'Reel', IMAGE: 'Image', CAROUSEL: 'Carousel', TEXT: 'Text post' };
-const DIMENSION_LABELS: Record<string, string> = { HOOK: 'Hook', CLARITY: 'Clarity', VISUALS: 'Visuals', PACING: 'Pacing', EMOTION: 'Emotional pull', SOUND_OFF: 'Works muted', CTA: 'Call to action' };
-const BASIS_LABELS: Record<string, string> = { AUDIENCE_SIMULATION: 'Audience simulation', VISUAL_REVIEW: 'Visual review', COPY_REVIEW: 'Copy review', YOUR_HISTORY: 'Your past posts' };
+export const DIMENSION_LABELS: Record<string, string> = { HOOK: 'Hook', CLARITY: 'Clarity', VISUALS: 'Visuals', PACING: 'Pacing', EMOTION: 'Emotional pull', SOUND_OFF: 'Works muted', CTA: 'Call to action' };
+export const BASIS_LABELS: Record<string, string> = { AUDIENCE_SIMULATION: 'Audience simulation', VISUAL_REVIEW: 'Visual review', COPY_REVIEW: 'Copy review', YOUR_HISTORY: 'Your past posts' };
 export const RATING_LABELS: Record<Rating, string> = { WEAK: 'Weak', OK: 'OK', STRONG: 'Strong' };
 /** Whether the backend has the audience simulation (TRIBE) configured. */
 export const SimulationOn = createContext(false);
 
 export const isVideo = (url: string) => /\.(mp4|mov)(\?|$)/i.test(url);
-/**
- * Uploads are stored with PUBLIC_BASE_URL (the public tunnel Meta fetches from). In the browser, play them from the
- * API directly: tunnels like ngrok's free tier answer browsers with a warning page instead of the file.
- */
-export const mediaSrc = (url: string) => {
-  try {
-    const { pathname } = new URL(url);
-    return pathname.startsWith('/media/') ? `${API}${pathname}` : url;
-  } catch { return url; }
-};
-export const clock = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
-const span = (i: Insight) => i.startSec == null ? null : i.endSec != null && i.endSec > i.startSec ? `${clock(i.startSec)}–${clock(i.endSec)}` : clock(i.startSec);
+export const clock = fmtClock;
+export const span = (i: Insight) => i.startSec == null ? null : i.endSec != null && i.endSec > i.startSec ? `${clock(i.startSec)}–${clock(i.endSec)}` : clock(i.startSec);
 export const busy = (c: Pick<Check, 'status'>) => c.status === 'PENDING' || c.status === 'RUNNING';
 const SEVERITY_ORDER = { HIGH: 0, MEDIUM: 1, LOW: 2 } as const;
-const fixList = (r: Report) => r.insights.filter((i) => i.severity !== 'LOW').sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
-const fixesAsText = (r: Report) => fixList(r).map((i, n) => `${n + 1}. ${span(i) ? `[${span(i)}] ` : ''}${i.title}: ${i.fix}`).join('\n');
+export const fixList = (r: Report) => r.insights.filter((i) => i.severity !== 'LOW').sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
+export const fixesAsText = (r: Report) => fixList(r).map((i, n) => `${n + 1}. ${span(i) ? `[${span(i)}] ` : ''}${plain(i.title)}: ${plain(i.fix)}`).join('\n');
 export const shortDate = (iso: string) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 export const failToast = (error: unknown, fallback: string) => toast.error(error instanceof Error ? error.message : fallback);
 
@@ -103,6 +97,16 @@ export function CheckView({ check, onRetry, nested, onChanged }: { check: Check;
   const videoRef = useRef<HTMLVideoElement>(null);
   const [now, setNow] = useState(0);
   const [copied, setCopied] = useState(false);
+  const [done, setDone] = useState<Record<string, boolean>>({});
+  const doneKey = `motion-fixes-${check.id}`;
+  useEffect(() => {
+    try { setDone(JSON.parse(window.localStorage.getItem(doneKey) || '{}')); } catch { setDone({}); }
+  }, [doneKey]);
+  const toggleFix = (n: number) => setDone((cur) => {
+    const next = { ...cur, [n]: !cur[n] };
+    try { window.localStorage.setItem(doneKey, JSON.stringify(next)); } catch { /* storage unavailable */ }
+    return next;
+  });
   const sim = check.signals?.simulation;
   const seek = (sec: number) => { const v = videoRef.current; if (v) { v.currentTime = sec; v.play().catch(() => { /* autoplay blocked */ }); } };
   const Title = nested ? 'h4' : 'h3';
@@ -130,7 +134,7 @@ export function CheckView({ check, onRetry, nested, onChanged }: { check: Check;
       <span className="tag tag-brand">{check.engine === 'AUDIENCE_SIMULATION' ? 'Audience simulation + AI review' : 'AI review'}</span>
       <span className="tag tag-muted">Estimate</span>
     </div>
-    <Title className="pf-verdict">{r.verdict}</Title>
+    <Title className="pf-verdict">{plain(r.verdict)}</Title>
 
     {reel && <div className={`pf-media ${sim ? 'pf-media-split' : ''}`}>
       <figure className="pf-media-cell">
@@ -150,10 +154,10 @@ export function CheckView({ check, onRetry, nested, onChanged }: { check: Check;
 
     {fixes.length > 0 && <>
       <div className="pf-section-row">
-        <h4 className="pf-section">Fix before posting <span className="list-count">{fixes.length}</span></h4>
+        <h4 className="pf-section">Fix before posting <span className="list-count">{fixes.filter((_, n) => done[n]).length}/{fixes.length}</span></h4>
         <button className="btn btn-ghost btn-sm" type="button" onClick={copyFixes}><Icon name={copied ? 'check' : 'copy'} size={13} /> {copied ? 'Copied' : 'Copy fix list'}</button>
       </div>
-      <ul className="pf-insights">{fixes.map((i, n) => <InsightItem key={n} insight={i} video={check.kind === 'VIDEO'} onSeek={seek} />)}</ul>
+      <ul className="pf-insights">{fixes.map((i, n) => <InsightItem key={n} insight={i} video={check.kind === 'VIDEO'} onSeek={seek} done={!!done[n]} onToggle={() => toggleFix(n)} />)}</ul>
     </>}
     {keeps.length > 0 && <>
       <h4 className="pf-section">Already working</h4>
@@ -162,7 +166,7 @@ export function CheckView({ check, onRetry, nested, onChanged }: { check: Check;
 
     {r.alternativeHooks.length > 0 && <>
       <h4 className="pf-section">Stronger openings to try</h4>
-      <ul className="pf-hooks">{r.alternativeHooks.map((h) => <li key={h}><span>&ldquo;{h}&rdquo;</span>
+      <ul className="pf-hooks">{r.alternativeHooks.map((h) => <li key={h}><span>&ldquo;{plain(h)}&rdquo;</span>
         <button className="btn btn-sm btn-soft" type="button" onClick={() => saveHook(h, check.platform)}><Icon name="star" size={13} /> Save</button>
         <button className="icon-btn" type="button" aria-label="Copy hook" onClick={() => navigator.clipboard?.writeText(h)}><Icon name="copy" size={13} /></button>
       </li>)}</ul>
@@ -175,7 +179,7 @@ export function CheckView({ check, onRetry, nested, onChanged }: { check: Check;
 type BrainState = { kind: 'loading' } | { kind: 'ready'; brain: BrainMap } | { kind: 'missing' } | { kind: 'needs-run' } | { kind: 'running' } | { kind: 'failed'; message: string };
 
 /** The simulated brain response next to the video, or a way to fill it in for checks made before it was stored. */
-function BrainPanel({ check, now, onChanged }: { check: Check; now: number; onChanged?: () => void }) {
+export function BrainPanel({ check, now, onChanged, bare = false, regions }: { check: Check; now: number; onChanged?: () => void; bare?: boolean; regions?: BrainRegion[] }) {
   const [state, setState] = useState<BrainState>({ kind: 'loading' });
   const [asking, setAsking] = useState(false);
 
@@ -216,9 +220,9 @@ function BrainPanel({ check, now, onChanged }: { check: Check; now: number; onCh
     finally { setAsking(false); }
   };
 
-  return <figure className="pf-media-cell">
+  return <figure className={`pf-media-cell ${bare ? 'pf-bare' : ''}`}>
     <figcaption className="pf-media-label">Simulated brain response <span>predicted average viewer</span></figcaption>
-    {state.kind === 'ready' && <BrainViewer brain={state.brain} time={now} />}
+    {state.kind === 'ready' && <BrainViewer brain={state.brain} time={now} bare={bare} regions={regions} />}
     {state.kind === 'loading' && <div className="pf-brain-empty">Loading the brain view…</div>}
     {state.kind === 'missing' && <div className="pf-brain-empty">
       <strong>No brain view stored for this check</strong>
@@ -238,16 +242,17 @@ function BrainPanel({ check, now, onChanged }: { check: Check; now: number; onCh
   </figure>;
 }
 
-function InsightItem({ insight: i, video, onSeek }: { insight: Insight; video: boolean; onSeek: (s: number) => void }) {
-  return <li className={`pf-insight sev-${i.severity.toLowerCase()}`}>
+function InsightItem({ insight: i, video, onSeek, done, onToggle }: { insight: Insight; video: boolean; onSeek: (s: number) => void; done?: boolean; onToggle?: () => void }) {
+  return <li className={`pf-insight sev-${i.severity.toLowerCase()} ${done ? 'is-done' : ''}`}>
     <div className="pf-insight-head">
+      {onToggle && <button type="button" className={`pf-tick ${done ? 'on' : ''}`} role="checkbox" aria-checked={!!done} aria-label={`Mark fixed: ${i.title}`} onClick={onToggle}>{done && <Icon name="check" size={11} />}</button>}
       {i.severity !== 'LOW' && <span className={`pf-sev pf-sev-${i.severity.toLowerCase()}`}>{i.severity === 'HIGH' ? 'Fix first' : 'Worth fixing'}</span>}
-      <strong>{i.title}</strong>
+      <strong>{plain(i.title)}</strong>
       {span(i) && (video ? <button type="button" className="pf-time" onClick={() => onSeek(i.startSec!)} aria-label={`Play from ${clock(i.startSec!)}`}><Icon name="play" size={11} /> {span(i)}</button> : <span className="pf-time">{span(i)}</span>)}
       <span className="tag tag-muted">{BASIS_LABELS[i.basis] || i.basis}</span>
     </div>
-    <p>{i.detail}</p>
-    <p className="pf-fix"><strong>{i.severity === 'LOW' ? 'Tip:' : 'Fix:'}</strong> {i.fix}</p>
+    <p>{plain(i.detail)}</p>
+    <p className="pf-fix"><strong>{i.severity === 'LOW' ? 'Tip:' : 'Fix:'}</strong> {plain(i.fix)}</p>
   </li>;
 }
 

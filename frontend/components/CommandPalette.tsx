@@ -19,8 +19,8 @@ type Action = { id: string; label: string; hint: string; href?: string; run?: ()
 const navigate: Action[] = [
   { id: 'ov', label: 'Overview', hint: 'Workspace', href: '/', icon: 'grid', keywords: ['home', 'dashboard'] },
   { id: 'pl', label: 'Planner', hint: 'Calendar', href: '/planner', icon: 'calendar', keywords: ['schedule', 'calendar'] },
-  { id: 'id', label: 'Ideas', hint: 'AI content ideas', href: '/ideas', icon: 'bulb' },
-  { id: 'hk', label: 'Hook library', hint: 'Opening lines', href: '/hooks', icon: 'sparkles' },
+  { id: 'lab', label: 'Content Lab', hint: 'Ideas and hooks', href: '/lab', icon: 'bulb', keywords: ['ideas', 'hooks', 'board'] },
+  { id: 'hk', label: 'Hook library', hint: 'Opening lines', href: '/lab?view=hooks', icon: 'sparkles' },
   { id: 'pf', label: 'Pre-flight check', hint: 'Predict reactions before posting', href: '/preflight', icon: 'gauge', keywords: ['predict', 'review', 'check'] },
   { id: 'au', label: 'Automations', hint: 'Comment to DM', href: '/automations', icon: 'zap', keywords: ['rules', 'dm'] },
   { id: 'in', label: 'Inbox', hint: 'Comments', href: '/comments', icon: 'inbox', keywords: ['comments', 'reply'] },
@@ -33,7 +33,9 @@ export default function CommandPalette({ open, onOpenChange, onToggleTheme, dark
 
   const actions: Action[] = [
     { id: 'new', label: 'Create post', hint: 'Composer', href: '/?compose=true', icon: 'plus', keywords: ['new', 'schedule', 'compose'] },
-    { id: 'gen', label: 'Generate ideas', hint: 'Ideas', href: '/ideas', icon: 'sparkles' },
+    { id: 'gen', label: 'Generate ideas', hint: 'Content Lab', href: '/lab', icon: 'sparkles', keywords: ['write', 'ideas'] },
+    { id: 'check', label: 'Check a reel', hint: 'Pre-flight', href: '/preflight', icon: 'gauge', keywords: ['predict', 'reel', 'preflight'] },
+    { id: 'sync', label: 'Sync insights', hint: 'Analytics', href: '/analytics', icon: 'refresh', keywords: ['refresh', 'meta'] },
     { id: 'theme', label: dark ? 'Switch to light mode' : 'Switch to dark mode', hint: 'Theme', run: onToggleTheme, icon: dark ? 'sun' : 'moon' },
   ];
 
