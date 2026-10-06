@@ -8,6 +8,9 @@ import { randomUUID } from 'crypto';
 export const UPLOAD_DIR = join(process.cwd(), 'uploads');
 if (!existsSync(UPLOAD_DIR)) mkdirSync(UPLOAD_DIR, { recursive: true });
 
+/** What the uploader names a file: a timestamp, eight hex characters and the extension. */
+export const UPLOAD_NAME = /^\d+-[0-9a-f]{8}\.([a-z0-9]+)$/;
+
 const ALLOWED = new Set([
   'image/jpeg', 'image/png', 'image/webp', 'image/gif',
   'video/mp4', 'video/quicktime',

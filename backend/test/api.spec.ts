@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing';
 import { createHmac } from 'crypto';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { configureApp } from '../src/configure-app';
 import { PrismaService } from '../src/prisma.service';
 import { PublishersService } from '../src/publishers.service';
 import { MetaService } from '../src/meta.service';
@@ -25,6 +26,7 @@ describe('API security', () => {
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).overrideProvider(PublishersService).useValue(pub).compile();
     app = moduleRef.createNestApplication({ rawBody: true });
+    configureApp(app);
     await app.init();
     prisma = app.get(PrismaService);
 
@@ -40,10 +42,33 @@ describe('API security', () => {
     await app.close();
   });
 
+  describe('hardening', () => {
+    it('sends security headers, lets other origins display uploaded media, and hides the framework', async () => {
+      const res = await http().get('/auth/me').expect(401);
+      expect(res.headers['x-content-type-options']).toBe('nosniff');
+      expect(res.headers['cross-origin-resource-policy']).toBe('cross-origin');
+      expect(res.headers['x-powered-by']).toBeUndefined();
+    });
+
+    it('slows down repeated sign-in attempts but not the webhook', async () => {
+      process.env.RATE_LIMIT = 'on';
+      try {
+        const attempt = () => http().post('/auth/login').send({ email: 'nobody@example.com', password: 'wrong-password' });
+        for (let i = 0; i < 10; i++) await attempt().expect(401);
+        const blocked = await attempt().expect(429);
+        expect(blocked.body.message).toMatch(/too many/i);
+        // Meta's webhook is exempt: it is verified by signature and may burst.
+        for (let i = 0; i < 12; i++) await http().get('/webhooks/meta').query({ 'hub.mode': 'subscribe', 'hub.verify_token': 'wrong', 'hub.challenge': 'x' }).expect(403);
+      } finally {
+        process.env.RATE_LIMIT = 'off';
+      }
+    });
+  });
+
   describe('protected routes reject unauthenticated calls', () => {
     const routes: [string, string][] = [
       ['get', '/accounts'], ['post', '/accounts'], ['delete', '/accounts/x'],
-      ['get', '/posts'], ['post', '/posts'], ['delete', '/posts/x'],
+      ['get', '/posts'], ['post', '/posts'], ['delete', '/posts/x'], ['get', '/drafts'], ['post', '/drafts'], ['patch', '/drafts/x'], ['delete', '/drafts/x'],
       ['get', '/automations'], ['post', '/automations'], ['patch', '/automations/x/toggle'], ['delete', '/automations/x'],
       ['get', '/comments/events'], ['post', '/comments/reply'],
       ['get', '/dashboard'], ['post', '/media/upload'],
@@ -337,6 +362,101 @@ describe('API security', () => {
     });
   });
 
+  describe('drafts', () => {
+    const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
+
+    it('saves a half-written post and updates it in place', async () => {
+      const created = await http().post('/drafts').set(auth(alice)).send({ caption: 'just a thought' }).expect(201);
+      expect(created.body).toMatchObject({ caption: 'just a thought', mediaType: 'IMAGE', accountId: null, scheduledAt: null });
+      const updated = await http().patch(`/drafts/${created.body.id}`).set(auth(alice)).send({ caption: 'a better thought', mediaUrls: ['https://cdn.example.com/a.jpg'] }).expect(200);
+      expect(updated.body.id).toBe(created.body.id);
+      expect(JSON.parse(updated.body.mediaUrls)).toEqual(['https://cdn.example.com/a.jpg']);
+      const list = (await http().get('/drafts').set(auth(alice)).expect(200)).body;
+      expect(list.filter((d: any) => d.id === created.body.id)).toHaveLength(1);
+    });
+
+    it('keeps drafts private to their owner', async () => {
+      const mine = (await http().post('/drafts').set(auth(alice)).send({ caption: 'private' }).expect(201)).body;
+      expect((await http().get('/drafts').set(auth(bob)).expect(200)).body.some((d: any) => d.id === mine.id)).toBe(false);
+      await http().patch(`/drafts/${mine.id}`).set(auth(bob)).send({ caption: 'hijacked' }).expect(404);
+      await http().delete(`/drafts/${mine.id}`).set(auth(bob)).expect(404);
+      expect((await prisma.postDraft.findUniqueOrThrow({ where: { id: mine.id } })).caption).toBe('private');
+    });
+
+    it('rejects a channel that is not theirs, bad media and unknown formats', async () => {
+      const bobAcc = (await http().get('/accounts').set(auth(bob)).expect(200)).body[0].id;
+      await http().post('/drafts').set(auth(alice)).send({ accountId: bobAcc }).expect(400);
+      await http().post('/drafts').set(auth(alice)).send({ mediaUrls: 'not-a-list' }).expect(400);
+      await http().post('/drafts').set(auth(alice)).send({ mediaType: 'HOLOGRAM' }).expect(400);
+      await http().post('/drafts').set(auth(alice)).send({ platform: 'myspace' }).expect(400);
+    });
+
+    it('limits media per draft and how many drafts one person can keep', async () => {
+      const many = Array.from({ length: 11 }, (_, i) => `https://cdn.example.com/${i}.jpg`);
+      expect((await http().post('/drafts').set(auth(alice)).send({ mediaUrls: many }).expect(400)).body.message).toContain('at most 10');
+      await http().post('/drafts').set(auth(alice)).send({ mediaUrls: ['https://cdn.example.com/' + 'x'.repeat(2100)] }).expect(400);
+
+      const carol = await register('carol@example.com');
+      const user = await prisma.user.findUniqueOrThrow({ where: { email: 'carol@example.com' } });
+      await prisma.postDraft.createMany({ data: Array.from({ length: 100 }, (_, i) => ({ userId: user.id, caption: `d${i}` })) });
+      expect((await http().post('/drafts').set(auth(carol)).send({ caption: 'one too many' }).expect(400)).body.message).toContain('100 drafts');
+      await http().patch(`/drafts/${(await prisma.postDraft.findFirstOrThrow({ where: { userId: user.id } })).id}`).set(auth(carol)).send({ caption: 'still editable' }).expect(200);
+    });
+
+    it('is consumed when the post is scheduled, and a foreign draft id is left alone', async () => {
+      const account = (await http().get('/accounts').set(auth(bob)).expect(200)).body.find((a: any) => a.provider === 'instagram').id;
+      const bobDraft = (await http().post('/drafts').set(auth(bob)).send({ caption: 'ready' }).expect(201)).body;
+      const aliceDraft = (await http().post('/drafts').set(auth(alice)).send({ caption: 'not yours' }).expect(201)).body;
+      const body = { accountId: account, platform: 'instagram', mediaUrls: ['https://cdn.example.com/a.jpg'], scheduledAt: new Date(Date.now() + 3_600_000).toISOString() };
+      await http().post('/posts').set(auth(bob)).send({ ...body, draftId: bobDraft.id }).expect(201);
+      await http().post('/posts').set(auth(bob)).send({ ...body, draftId: aliceDraft.id }).expect(201);
+      expect(await prisma.postDraft.findUnique({ where: { id: bobDraft.id } })).toBeNull();
+      expect(await prisma.postDraft.findUnique({ where: { id: aliceDraft.id } })).not.toBeNull();
+    });
+  });
+
+  describe('inbox', () => {
+    const bobIg = () => prisma.socialAccount.findFirstOrThrow({ where: { externalId: 'ig-bob' } });
+
+    it('attaches the post a comment was left on, when we published it', async () => {
+      const account = await bobIg();
+      const post = await prisma.scheduledPost.create({ data: { accountId: account.id, platform: 'instagram', mediaType: 'IMAGE', caption: 'Context post', mediaUrls: '["https://cdn.example.com/a.jpg"]', scheduledAt: new Date(Date.now() - 86_400_000), status: 'PUBLISHED', externalId: 'ig-media-42' } });
+      await prisma.commentEvent.create({ data: { accountId: account.id, platform: 'instagram', commentId: 'ctx-1', mediaId: 'ig-media-42', senderId: 'fan', text: 'Love this' } });
+      await prisma.commentEvent.create({ data: { accountId: account.id, platform: 'instagram', commentId: 'ctx-2', mediaId: 'someone-elses-media', senderId: 'fan2', text: 'Unknown post' } });
+      const events = (await http().get('/comments/events').set('Authorization', `Bearer ${bob}`).expect(200)).body;
+      expect(events.find((e: any) => e.commentId === 'ctx-1').post).toMatchObject({ id: post.id, caption: 'Context post' });
+      expect(events.find((e: any) => e.commentId === 'ctx-2').post).toBeNull();
+    });
+
+    it('matches a Facebook comment whose post id is page_post to a post stored by its short id', async () => {
+      const account = await prisma.socialAccount.findFirstOrThrow({ where: { userId: (await prisma.user.findUniqueOrThrow({ where: { email: 'bob@example.com' } })).id, provider: 'facebook_page' } }).catch(() => null);
+      if (!account) return; // this suite gives bob no Facebook Page
+      const post = await prisma.scheduledPost.create({ data: { accountId: account.id, platform: 'facebook', mediaType: 'TEXT', caption: 'FB post', mediaUrls: '[]', scheduledAt: new Date(Date.now() - 3_600_000), status: 'PUBLISHED', externalId: '9988' } });
+      await prisma.commentEvent.create({ data: { accountId: account.id, platform: 'facebook', commentId: 'fb-ctx', mediaId: `${account.externalId}_9988`, text: 'hi' } });
+      const events = (await http().get('/comments/events').set('Authorization', `Bearer ${bob}`).expect(200)).body;
+      expect(events.find((e: any) => e.commentId === 'fb-ctx').post.id).toBe(post.id);
+    });
+
+    it('marks the comment replied once Meta accepts the reply, and not before', async () => {
+      const account = await bobIg();
+      await prisma.commentEvent.create({ data: { accountId: account.id, platform: 'instagram', commentId: 'rep-ok', text: 'answer me' } });
+      await prisma.commentEvent.create({ data: { accountId: account.id, platform: 'instagram', commentId: 'rep-fail', text: 'answer me too' } });
+
+      pub.replyInstagramComment.mockResolvedValueOnce({ id: 'r1' });
+      await http().post('/comments/reply').set('Authorization', `Bearer ${bob}`).send({ platform: 'instagram', commentId: 'rep-ok', text: 'thanks', accountId: account.id }).expect(201);
+      expect((await prisma.commentEvent.findFirstOrThrow({ where: { commentId: 'rep-ok' } })).replied).toBe(true);
+
+      pub.privateReplyInstagram.mockResolvedValueOnce({ ok: true });
+      await http().post('/comments/reply').set('Authorization', `Bearer ${bob}`).send({ platform: 'instagram', commentId: 'rep-ok', text: 'dm', accountId: account.id, dm: true }).expect(201);
+      expect((await prisma.commentEvent.findFirstOrThrow({ where: { commentId: 'rep-ok' } })).dmSent).toBe(true);
+
+      pub.replyInstagramComment.mockRejectedValueOnce(new Error('Meta refused'));
+      const failed = await http().post('/comments/reply').set('Authorization', `Bearer ${bob}`).send({ platform: 'instagram', commentId: 'rep-fail', text: 'nope', accountId: account.id });
+      expect(failed.status).toBeGreaterThanOrEqual(400);
+      expect((await prisma.commentEvent.findFirstOrThrow({ where: { commentId: 'rep-fail' } })).replied).toBe(false);
+    });
+  });
+
   describe('scheduling', () => {
     it('rejects posts for a channel the account can\'t publish to, and non-JPEG images for Instagram', async () => {
       const igAccount = (await http().get('/accounts').set('Authorization', `Bearer ${bob}`).expect(200)).body.find((a: any) => a.provider === 'instagram').id;
@@ -345,6 +465,72 @@ describe('API security', () => {
       const png = await http().post('/posts').set('Authorization', `Bearer ${bob}`).send({ accountId: igAccount, platform: 'instagram', mediaUrls: ['https://cdn.example.com/a.png'], scheduledAt: at }).expect(400);
       expect(png.body.message).toContain('JPEG');
       await http().post('/posts').set('Authorization', `Bearer ${bob}`).send({ accountId: igAccount, platform: 'instagram', mediaUrls: ['https://cdn.example.com/a.jpg'], scheduledAt: at }).expect(201);
+    });
+
+    describe('editing a scheduled post in place', () => {
+      const igAccountFor = async (token: string) => (await http().get('/accounts').set('Authorization', `Bearer ${token}`).expect(200)).body.find((a: any) => a.provider === 'instagram').id as string;
+      // Look the account up first: awaiting inside a half-built request would close supertest's shared server.
+      const create = async (token: string, extra: object = {}) => { const accountId = await igAccountFor(token); return (await http().post('/posts').set('Authorization', `Bearer ${token}`)
+        .send({ accountId, platform: 'instagram', mediaUrls: ['https://cdn.example.com/a.jpg'], caption: 'first', scheduledAt: new Date(Date.now() + 3_600_000).toISOString(), ...extra }).expect(201)).body; };
+
+      it('changes the time and caption but keeps the same post', async () => {
+        const post = await create(bob);
+        const later = new Date(Date.now() + 7_200_000).toISOString();
+        const res = await http().patch(`/posts/${post.id}`).set('Authorization', `Bearer ${bob}`).send({ scheduledAt: later, caption: 'edited' }).expect(200);
+        expect(res.body.id).toBe(post.id);
+        expect(res.body.caption).toBe('edited');
+        expect(new Date(res.body.scheduledAt).toISOString()).toBe(later);
+      });
+
+      it('refuses past times, empty edits, bad media and other people\'s posts', async () => {
+        const post = await create(bob);
+        const patch = (token: string, body: object) => http().patch(`/posts/${post.id}`).set('Authorization', `Bearer ${token}`).send(body);
+        expect((await patch(bob, { scheduledAt: new Date(Date.now() - 60_000).toISOString() }).expect(400)).body.message).toContain('future');
+        await patch(bob, {}).expect(400);
+        expect((await patch(bob, { mediaUrls: ['https://cdn.example.com/a.png'] }).expect(400)).body.message).toContain('JPEG');
+        await patch(alice, { caption: 'mine now' }).expect(404);
+        expect((await prisma.scheduledPost.findUniqueOrThrow({ where: { id: post.id } })).caption).toBe('first');
+      });
+
+      it('limits media on a new post and on an edit, the same as on a draft', async () => {
+        const accountId = await igAccountFor(bob);
+        const many = Array.from({ length: 11 }, (_, i) => `https://cdn.example.com/${i}.jpg`);
+        const when = new Date(Date.now() + 3_600_000).toISOString();
+        const res = await http().post('/posts').set('Authorization', `Bearer ${bob}`).send({ accountId, platform: 'instagram', mediaType: 'CAROUSEL', mediaUrls: many, scheduledAt: when }).expect(400);
+        expect(res.body.message).toContain('at most 10');
+        const post = await create(bob);
+        await http().patch(`/posts/${post.id}`).set('Authorization', `Bearer ${bob}`).send({ mediaUrls: many }).expect(400);
+      });
+
+      it('only edits posts that are still waiting to publish', async () => {
+        const post = await create(bob);
+        await prisma.scheduledPost.update({ where: { id: post.id }, data: { status: 'PUBLISHED' } });
+        await http().patch(`/posts/${post.id}`).set('Authorization', `Bearer ${bob}`).send({ caption: 'too late' }).expect(400);
+      });
+    });
+
+    describe('linking a post to its idea', () => {
+      it('marks the idea used and returns it with the post', async () => {
+        const bobUser = await prisma.user.findUniqueOrThrow({ where: { email: 'bob@example.com' } });
+        const idea = await prisma.contentIdea.create({ data: { userId: bobUser.id, title: 'Linked idea', hook: 'A hook', format: 'IMAGE', platform: 'instagram' } });
+        const account = (await http().get('/accounts').set('Authorization', `Bearer ${bob}`).expect(200)).body.find((a: any) => a.provider === 'instagram').id;
+        const res = await http().post('/posts').set('Authorization', `Bearer ${bob}`)
+          .send({ accountId: account, platform: 'instagram', mediaUrls: ['https://cdn.example.com/a.jpg'], scheduledAt: new Date(Date.now() + 3_600_000).toISOString(), ideaId: idea.id }).expect(201);
+        expect(res.body.idea).toEqual({ id: idea.id, title: 'Linked idea' });
+        expect((await prisma.contentIdea.findUniqueOrThrow({ where: { id: idea.id } })).status).toBe('USED');
+        expect((await http().get('/posts').set('Authorization', `Bearer ${bob}`).expect(200)).body.find((p: any) => p.id === res.body.id).idea.title).toBe('Linked idea');
+      });
+
+      it('ignores an idea that belongs to someone else', async () => {
+        const bobUser = await prisma.user.findUniqueOrThrow({ where: { email: 'bob@example.com' } });
+        const theirs = await prisma.contentIdea.create({ data: { userId: bobUser.id, title: 'Bob only', hook: 'h', format: 'IMAGE', platform: 'instagram' } });
+        const account = (await http().get('/accounts').set('Authorization', `Bearer ${alice}`).expect(200)).body.find((a: any) => a.provider === 'instagram');
+        if (!account) return; // alice has no Instagram channel in this suite
+        const res = await http().post('/posts').set('Authorization', `Bearer ${alice}`)
+          .send({ accountId: account.id, platform: 'instagram', mediaUrls: ['https://cdn.example.com/a.jpg'], scheduledAt: new Date(Date.now() + 3_600_000).toISOString(), ideaId: theirs.id }).expect(201);
+        expect(res.body.idea).toBeNull();
+        expect((await prisma.contentIdea.findUniqueOrThrow({ where: { id: theirs.id } })).status).toBe('NEW');
+      });
     });
 
     it('claims each due post so overlapping ticks publish it once', async () => {

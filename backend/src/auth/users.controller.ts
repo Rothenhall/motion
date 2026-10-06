@@ -1,5 +1,7 @@
 import { BadRequestException, Body, ConflictException, Controller, Get, HttpCode, Post, UnauthorizedException } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { PrismaService } from '../prisma.service';
+import { AUTH_LIMIT } from '../rate-limit';
 import { AuthUser, CurrentUser, Public } from './auth.guard';
 import { hashPassword, signToken, verifyPassword } from './crypto';
 
@@ -16,6 +18,7 @@ export class UsersController {
   }
 
   @Public()
+  @Throttle(AUTH_LIMIT)
   @Post('register')
   async register(@Body() body: { email?: string; password?: string }) {
     const email = body.email?.trim().toLowerCase();
@@ -34,6 +37,7 @@ export class UsersController {
   }
 
   @Public()
+  @Throttle(AUTH_LIMIT)
   @Post('login')
   @HttpCode(200)
   async login(@Body() body: { email?: string; password?: string }) {

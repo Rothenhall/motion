@@ -6,3 +6,4 @@ process.env.TOKEN_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString('base64');
 process.env.META_APP_SECRET = 'test-app-secret';
 process.env.META_IG_APP_SECRET = 'test-ig-app-secret';
 process.env.META_WEBHOOK_VERIFY_TOKEN = 'test-verify-token';
+process.env.RATE_LIMIT = 'off';

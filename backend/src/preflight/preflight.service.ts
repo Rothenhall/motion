@@ -6,7 +6,7 @@ import { join } from 'path';
 import { ContentCheck, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { AiService, PLATFORMS, PreflightReport, ReviewImage } from '../ai/ai.service';
-import { UPLOAD_DIR } from '../media.controller';
+import { UPLOAD_DIR, UPLOAD_NAME } from '../media.controller';
 import { AudienceSimulation, BrainMap, NotCachedError, TribeClient } from './tribe.client';
 import { extractFrames, frameTimes, hashFiles, imageForReview, probeVideo, sceneCuts, VideoFacts } from './media-probe';
 
@@ -21,7 +21,6 @@ const MAX_VARIANTS = 3;
 const MAX_SIMULATION_SEC = 180;
 const STUCK_AFTER_MS = 45 * 60 * 1000; // longer than the 30-minute audience simulation timeout
 const MAX_ATTEMPTS = 2;
-const UPLOAD_NAME = /^\d+-[0-9a-f]{8}\.([a-z0-9]+)$/;
 const MIME: Record<string, string> = { mp4: 'video/mp4', mov: 'video/quicktime', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif' };
 
 /** Every column except the brain map, which can be megabytes; GET /preflight/:id/brain serves it. */

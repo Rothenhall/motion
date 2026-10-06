@@ -23,7 +23,7 @@ export class AnalyticsController {
     const since = today - days * DAY;
     const prevSince = since - days * DAY;
 
-    const [accounts, rows, followerRows, published, prevPublished, topPosts] = await Promise.all([
+    const [accounts, rows, followerRows, published, prevPublished, topPosts, allPostInsights] = await Promise.all([
       this.prisma.socialAccount.findMany({
         where: { userId: user.id },
         orderBy: { createdAt: 'asc' },
@@ -45,7 +45,14 @@ export class AnalyticsController {
         where: { ...owned, post: { scheduledAt: { gte: new Date(since) } } },
         orderBy: [{ engagements: 'desc' }, { views: 'desc' }],
         take: 5,
-        include: { post: { select: { platform: true, caption: true, mediaType: true, permalink: true, scheduledAt: true } } },
+        include: { post: { select: { platform: true, caption: true, mediaType: true, mediaUrls: true, permalink: true, scheduledAt: true } } },
+      }),
+      // Every measured post in range (not just the top few), so best-time and rhythm views have real data.
+      this.prisma.postInsight.findMany({
+        where: { ...owned, post: { scheduledAt: { gte: new Date(since) } } },
+        orderBy: { post: { scheduledAt: 'desc' } },
+        take: 300,
+        select: { postId: true, views: true, engagements: true, post: { select: { scheduledAt: true, platform: true } } },
       }),
     ]);
 
@@ -113,11 +120,13 @@ export class AnalyticsController {
       },
       series: [...perDay.entries()].map(([d, v]) => ({ date: new Date(d), ...v })),
       channels,
+      postStats: allPostInsights.map((p) => ({ id: p.postId, platform: p.post.platform, publishedAt: p.post.scheduledAt, views: p.views, engagements: p.engagements })),
       topPosts: topPosts.map((p) => ({
         id: p.postId,
         platform: p.post.platform,
         caption: p.post.caption,
         mediaType: p.post.mediaType,
+        mediaUrls: p.post.mediaUrls,
         permalink: p.post.permalink,
         publishedAt: p.post.scheduledAt,
         views: p.views,

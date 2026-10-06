@@ -18,6 +18,7 @@ model User {
   ideas        ContentIdea[]
   hooks        Hook[]
   checks       ContentCheck[]
+  drafts       PostDraft[]
 }
 
 model SocialAccount {
@@ -57,9 +58,13 @@ model ScheduledPost {
   externalId  String?
   error       String?
   permalink   String?
+  ideaId      String? // the content idea this post was written from
+  idea        ContentIdea?  @relation(fields: [ideaId], references: [id], onDelete: SetNull)
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
   insight     PostInsight?
+
+  @@index([ideaId])
 }
 
 /// One normalized account-level metric for one UTC day.
@@ -159,6 +164,7 @@ model ContentIdea {
   topic     String?  // the prompt topic it came from
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  posts     ScheduledPost[]
 
   @@index([userId, status, createdAt])
 }
@@ -210,4 +216,22 @@ model ContentCheck {
   @@index([userId, createdAt])
   @@index([status, createdAt])
   @@index([groupId])
+}
+
+/// A post still being written. Unlike ScheduledPost it may lack a channel, a time or even media.
+model PostDraft {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId   String?
+  platform    String?
+  mediaType   String    @default("IMAGE")
+  caption     String?
+  mediaUrls   String    @default("[]") // JSON array string
+  scheduledAt DateTime?
+  ideaId      String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([userId, updatedAt])
 }

@@ -1,4 +1,5 @@
 import { Controller, Get, Headers, HttpCode, Post, Query, RawBodyRequest, Req, Res, UnauthorizedException } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import { Request } from 'express';
 import { AutomationsService, IncomingComment } from './automations.service';
 import { Public } from './auth/auth.guard';
@@ -58,6 +59,7 @@ export function commentsFromWebhook(body: any): IncomingComment[] {
 }
 
 @Public()
+@SkipThrottle() // Meta retries and bursts; its calls are verified by signature instead
 @Controller('webhooks/meta')
 export class WebhooksController {
   constructor(private auto: AutomationsService) {}

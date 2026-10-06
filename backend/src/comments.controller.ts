@@ -8,9 +8,30 @@ import { decryptToken } from './auth/crypto';
 export class CommentsController {
   constructor(private prisma: PrismaService, private pub: PublishersService) {}
 
+  /** Recent comments, each with the post it was left on when we published that post ourselves. */
   @Get('events')
-  events(@CurrentUser() user: AuthUser) {
-    return this.prisma.commentEvent.findMany({ where: { account: { userId: user.id } }, orderBy: { createdAt: 'desc' }, take: 100 });
+  async events(@CurrentUser() user: AuthUser) {
+    const events = await this.prisma.commentEvent.findMany({ where: { account: { userId: user.id } }, orderBy: { createdAt: 'desc' }, take: 100 });
+    const mediaIds = [...new Set(events.map((e) => e.mediaId).filter((m): m is string => !!m))];
+    if (!mediaIds.length) return events.map((e) => ({ ...e, post: null }));
+
+    // Facebook reports "pageId_postId" while we may have stored either form, so match on the id's last segment too.
+    const tail = (id: string) => id.split('_').pop() as string;
+    const tails = [...new Set(mediaIds.map(tail))];
+    const posts = await this.prisma.scheduledPost.findMany({
+      where: {
+        account: { userId: user.id },
+        status: 'PUBLISHED',
+        OR: tails.flatMap((t) => [{ externalId: t }, { externalId: { endsWith: `_${t}` } }]),
+      },
+      select: { id: true, accountId: true, externalId: true, caption: true, mediaType: true, mediaUrls: true, permalink: true, scheduledAt: true },
+    });
+    const byKey = new Map<string, (typeof posts)[number]>();
+    for (const post of posts) if (post.externalId) byKey.set(`${post.accountId}:${tail(post.externalId)}`, post);
+    return events.map((e) => {
+      const post = e.mediaId && e.accountId ? byKey.get(`${e.accountId}:${tail(e.mediaId)}`) : undefined;
+      return { ...e, post: post ? { id: post.id, caption: post.caption, mediaType: post.mediaType, mediaUrls: post.mediaUrls, permalink: post.permalink, publishedAt: post.scheduledAt } : null };
+    });
   }
 
   @Post('reply')
@@ -29,11 +50,21 @@ export class CommentsController {
     if (platform === 'facebook' && account.provider !== 'facebook_page') throw new BadRequestException('Select a Facebook Page account for this reply.');
 
     const token = decryptToken(account.accessToken);
+    let result: unknown;
     if (platform === 'instagram') {
-      if (body.dm) return this.pub.privateReplyInstagram(account.externalId, commentId, text, token);
-      return this.pub.replyInstagramComment(commentId, text, token);
+      result = body.dm
+        ? await this.pub.privateReplyInstagram(account.externalId, commentId, text, token)
+        : await this.pub.replyInstagramComment(commentId, text, token);
+    } else {
+      result = body.dm
+        ? await this.pub.privateReplyFacebook(account.externalId, commentId, text, token)
+        : await this.pub.replyFacebookComment(commentId, text, token);
     }
-    if (body.dm) return this.pub.privateReplyFacebook(account.externalId, commentId, text, token);
-    return this.pub.replyFacebookComment(commentId, text, token);
+    // Only reached when Meta accepted the reply (a failure throws above), so the comment is now handled.
+    await this.prisma.commentEvent.updateMany({
+      where: { accountId: account.id, commentId },
+      data: body.dm ? { replied: true, dmSent: true } : { replied: true },
+    });
+    return result;
   }
 }

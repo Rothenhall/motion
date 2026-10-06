@@ -44,7 +44,7 @@ export class PublishersService {
   private async publishInstagram(acc: any, caption?: string | null, urls: string[] = [], mediaType = 'IMAGE') {
     const base = `https://graph.instagram.com/${this.v()}/${acc.externalId}`;
     const first = urls[0];
-    if (!first) throw new Error('Instagram needs a photo or video — attach a file or paste a public media URL.');
+    if (!first) throw new Error('Instagram needs a photo or video. Attach a file or paste a public media URL.');
     const isVideo = mediaType === 'VIDEO' || mediaType === 'REELS' || VIDEO_URL.test(first);
     if (!isVideo && NON_JPEG_IMAGE.test(first)) throw new Error('Instagram only publishes JPEG images. Convert the image to JPG and try again.');
     await this.checkInstagramQuota(base, acc.accessToken);
