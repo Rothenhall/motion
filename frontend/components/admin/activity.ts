@@ -62,7 +62,10 @@ export function describeActivity(entry: AuditEntry, people: Record<string, strin
       const name = str(meta.label) || (str(meta.provider) ? providerLabel(str(meta.provider)) : '');
       return `${who} connected ${name ? `${name}` : 'a channel'}${meta.manual ? ' with a token' : ''}`;
     }
-    case 'channel.disconnect': return `${who} disconnected ${str(meta.provider) ? `a ${providerLabel(str(meta.provider))} channel` : 'a channel'}`;
+    case 'channel.disconnect': {
+      const name = str(meta.provider) ? providerLabel(str(meta.provider)) : '';
+      return `${who} disconnected ${name ? `${name === 'Instagram' ? 'an' : 'a'} ${name} channel` : 'a channel'}`;
+    }
     case 'preview.start': return `${who} started previewing as this client (${meta.mode === 'admin' ? 'with admin controls' : 'read only'})`;
     case 'preview.exit': return `${who} stopped previewing as this client`;
     case 'approval.submit': return `${who} sent a post for approval`;

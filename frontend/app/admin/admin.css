@@ -74,8 +74,8 @@
 .adm-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 
 /* ---- Tabs ---- */
-.adm .adm-tablist { display: flex; width: 100%; height: auto; padding: 0; gap: 2px; border-radius: 0; background: transparent; border-bottom: 1px solid var(--border); overflow-x: auto; justify-content: flex-start; margin-bottom: 18px; }
-.adm .adm-tab { flex: 0 0 auto; height: auto; padding: 10px 14px; border: 0; border-radius: 0; margin-bottom: -1px; border-bottom: 2px solid transparent; background: transparent; color: var(--text-2); font-size: 13px; font-weight: 625; box-shadow: none; }
+.adm .adm-tablist { display: flex; width: 100%; height: auto; padding: 0; gap: 2px; border-radius: 0; background: transparent; border-bottom: 1px solid var(--border); overflow-x: auto; overflow-y: hidden; scrollbar-width: none; justify-content: flex-start; margin-bottom: 18px; }
+.adm .adm-tab { flex: 0 0 auto; height: auto; padding: 10px 14px; border: 0; border-radius: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-2); font-size: 13px; font-weight: 625; box-shadow: none; }
 .adm .adm-tab:hover { color: var(--text-1); }
 .adm .adm-tab[data-state="active"] { color: var(--text-1); border-bottom-color: var(--text-1); background: transparent; box-shadow: none; }
 .adm .adm-tab::after { display: none; }

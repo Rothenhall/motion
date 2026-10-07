@@ -38,7 +38,7 @@ export default function AdminOverviewPage() {
       <section className="page-intro">
         <div>
           <div className="eyebrow">Admin</div>
-          <h1>All clients</h1>
+          <h1>Overview</h1>
           <p>What needs a person today, across every client.</p>
         </div>
         <div className="page-intro-actions"><Link className="btn btn-ghost" href="/admin/clients"><Icon name="grid" size={14} /> All clients</Link></div>

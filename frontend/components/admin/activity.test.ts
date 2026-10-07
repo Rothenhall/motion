@@ -25,6 +25,7 @@ describe('activity sentences', () => {
     expect(describeActivity(entry('channel.connect', { meta: { provider: 'instagram', label: '@bakery' } }))).toBe('ana@rothenhall.test connected @bakery');
     expect(describeActivity(entry('channel.connect', { meta: { provider: 'threads', manual: true } }))).toBe('ana@rothenhall.test connected Threads with a token');
     expect(describeActivity(entry('channel.disconnect', { meta: { provider: 'facebook_page' } }))).toBe('ana@rothenhall.test disconnected a Facebook channel');
+    expect(describeActivity(entry('channel.disconnect', { meta: { provider: 'instagram' } }))).toBe('ana@rothenhall.test disconnected an Instagram channel');
     expect(describeActivity(entry('preview.start', { meta: { mode: 'admin' } }))).toBe('ana@rothenhall.test started previewing as this client (with admin controls)');
     expect(describeActivity(entry('preview.start', { meta: { mode: 'view' } }))).toContain('read only');
     expect(describeActivity(entry('client.seats', { meta: { seatLimit: 5 } }))).toBe('ana@rothenhall.test set the seat limit to 5');

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ClientRow, InviteLink, createClient } from '../../lib/admin';
 import { isApiError } from '../../lib/api';
@@ -15,8 +15,11 @@ export default function NewClientDialog({ open, onOpenChange, onCreated }: { ope
   const [error, setError] = useState('');
   const [created, setCreated] = useState<{ client: ClientRow; invite: InviteLink } | null>(null);
 
-  const reset = () => { setName(''); setEmail(''); setError(''); setCreated(null); setBusy(false); };
-  const change = (next: boolean) => { if (!next) reset(); onOpenChange(next); };
+  // Start fresh each time it opens (not when it closes, so the content does not change while it fades out).
+  useEffect(() => {
+    if (open) { setName(''); setEmail(''); setError(''); setCreated(null); setBusy(false); }
+  }, [open]);
+  const change = (next: boolean) => onOpenChange(next);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();

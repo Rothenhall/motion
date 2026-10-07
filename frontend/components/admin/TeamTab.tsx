@@ -21,10 +21,11 @@ function InviteDialog({ clientId, open, onOpenChange, onInvited }: { clientId: s
   const [error, setError] = useState('');
   const [link, setLink] = useState<InviteLink | null>(null);
 
-  const change = (next: boolean) => {
-    if (!next) { setEmail(''); setRole('CLIENT_MEMBER'); setError(''); setLink(null); }
-    onOpenChange(next);
-  };
+  // Start fresh each time it opens (not when it closes, so the content does not change while it fades out).
+  useEffect(() => {
+    if (open) { setEmail(''); setRole('CLIENT_MEMBER'); setError(''); setLink(null); }
+  }, [open]);
+  const change = (next: boolean) => onOpenChange(next);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
