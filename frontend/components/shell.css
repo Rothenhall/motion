@@ -1,0 +1,78 @@
+/* Client shell: loading skeleton, paused screen, preview bar, feature gate, menu badge. Not in a layer, so it wins over globals.css. */
+
+:root {
+  --preview-bg: #fbe7a1;
+  --preview-fg: #4a3200;
+  --preview-line: #d9b34a;
+  --preview-chip: rgba(74, 50, 0, .1);
+  --preview-chip-on: #4a3200;
+  --preview-chip-on-fg: #fff6d6;
+}
+[data-theme="dark"] {
+  --preview-bg: #4b3a0d;
+  --preview-fg: #ffeab0;
+  --preview-line: #8a6d1c;
+  --preview-chip: rgba(255, 234, 176, .12);
+  --preview-chip-on: #ffeab0;
+  --preview-chip-on-fg: #3a2c05;
+}
+
+/* Everything that sticks to the top sits below the preview bar (its height is set by PreviewBar). */
+.app-shell { min-height: calc(100vh - var(--preview-h, 0px)); }
+.sidebar { top: var(--preview-h, 0px); height: calc(100vh - var(--preview-h, 0px)); min-height: 0; overflow-y: auto; }
+.topbar { top: var(--preview-h, 0px); }
+html { scroll-padding-top: calc(84px + var(--preview-h, 0px)); }
+
+.preview-bar {
+  position: sticky; top: 0; z-index: 45;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px;
+  padding: 8px 20px; background: var(--preview-bg); color: var(--preview-fg); border-bottom: 1px solid var(--preview-line);
+  font-size: 13px; line-height: 1.4;
+}
+.preview-copy { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; min-width: 0; }
+.preview-title { font-weight: 725; overflow-wrap: anywhere; }
+.preview-note { font-weight: 525; }
+.preview-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.preview-switch { display: inline-flex; padding: 2px; border-radius: 9px; background: var(--preview-chip); }
+.preview-switch button, .preview-exit {
+  min-height: 32px; padding: 0 12px; border: 1px solid transparent; border-radius: 7px;
+  background: transparent; color: inherit; font-size: 12.5px; font-weight: 625;
+}
+.preview-switch button[aria-pressed="true"] { background: var(--preview-chip-on); color: var(--preview-chip-on-fg); }
+.preview-switch button:hover:not([aria-pressed="true"]):not(:disabled) { background: var(--preview-chip); }
+.preview-exit { border-color: var(--preview-line); }
+.preview-exit:hover:not(:disabled) { background: var(--preview-chip); }
+.preview-bar button:disabled { opacity: .6; cursor: progress; }
+.preview-bar :focus-visible { outline: 2px solid var(--preview-fg); outline-offset: 2px; }
+@media (max-width: 620px) {
+  .preview-bar { padding: 8px 14px; }
+  .preview-actions { width: 100%; }
+  .preview-switch { flex: 1; }
+  .preview-switch button { flex: 1; padding: 0 6px; }
+}
+
+/* Waiting for the server, paused workspace, and could-not-reach screens */
+.shell-skeleton { display: flex; min-height: 100vh; }
+.shell-skeleton .sidebar { display: flex; }
+.shell-skel-nav { display: grid; gap: 10px; padding: 28px 10px 0; }
+.shell-skel-nav i { display: block; height: 34px; border-radius: 10px; background: rgba(255, 255, 255, .08); }
+.shell-skel-main { flex: 1; min-width: 0; }
+.shell-skel-top { height: 68px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.shell-skel-body { max-width: 1280px; margin: 0 auto; padding: 32px; display: grid; gap: 16px; }
+.shell-skel-body .skeleton { height: 120px; border-radius: 16px; }
+@media (max-width: 860px) { .shell-skeleton .sidebar { display: none; } .shell-skel-body { padding: 20px 14px; } }
+.shell-screen .auth-card { text-align: center; justify-items: center; }
+.shell-screen .auth-card p { margin: 0; color: var(--text-2); }
+.shell-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+
+/* Section switched off */
+.gate-panel { max-width: 560px; margin: 48px auto; padding: 32px; display: grid; gap: 12px; justify-items: start; }
+.gate-panel h1 { margin: 0; font-size: 20px; color: var(--text-1); }
+.gate-panel p { margin: 0; color: var(--text-2); }
+.not-on-hint { display: inline-block; }
+
+/* Count beside a menu entry */
+.nav-badge {
+  margin-left: auto; min-width: 20px; padding: 1px 7px; border-radius: 999px; text-align: center;
+  background: #fbe7a1; color: #4a3200; font-size: 11px; font-weight: 725; font-variant-numeric: tabular-nums;
+}
