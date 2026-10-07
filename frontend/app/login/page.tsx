@@ -1,8 +1,13 @@
 'use client';
 
 import { FormEvent, useState } from 'react';
-import { api, setToken } from '../../lib/api';
+import { api } from '../../lib/api';
+import { finishSignIn, type SessionResponse } from '../../lib/auth-flow';
 import { Icon } from '../../components/Icons';
+
+// Sign-up is closed: people join by invitation. The one exception is a brand-new install, where the very first account
+// becomes the admin. That form only appears when NEXT_PUBLIC_ALLOW_SIGNUP is 'true' (off by default).
+const FIRST_ADMIN_FORM = process.env.NEXT_PUBLIC_ALLOW_SIGNUP === 'true';
 
 export default function Login() {
   const [mode, setMode] = useState<'login' | 'register'>('login');
@@ -18,9 +23,8 @@ export default function Login() {
     setError('');
     setBusy(true);
     try {
-      const res = await api<{ token: string }>(`/auth/${mode}`, { method: 'POST', body: JSON.stringify({ email, password }) });
-      setToken(res.token);
-      window.location.assign('/');
+      const res = await api<SessionResponse>(`/auth/${mode}`, { method: 'POST', body: JSON.stringify({ email, password }) });
+      finishSignIn(res);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not sign in.');
       setBusy(false);
@@ -31,8 +35,8 @@ export default function Login() {
     <form className="card auth-card" onSubmit={submit} aria-labelledby="auth-title">
       <div className="brand-row"><div className="brand-mark" aria-hidden="true"><span /></div><span className="brand-name">motion</span></div>
       <div>
-        <h1 id="auth-title">{registering ? 'Create your account' : 'Welcome back'}</h1>
-        <p className="auth-sub">{registering ? 'Schedule posts, automate replies and find your next idea.' : 'Sign in to your Motion workspace.'}</p>
+        <h1 id="auth-title">{registering ? 'Create the first admin account' : 'Welcome back'}</h1>
+        <p className="auth-sub">{registering ? 'This only works on a brand-new install, before anyone has an account.' : 'Sign in to your Motion workspace.'}</p>
       </div>
       {error && <div className="notice notice-error" role="alert"><Icon name="alert" size={15} /> {error}</div>}
       <div className="field">
@@ -59,13 +63,16 @@ export default function Login() {
         </div>
         {registering && <span className="form-hint" id="password-hint">At least 8 characters.</span>}
       </div>
-      <button className="btn" type="submit" disabled={busy}>{busy ? (registering ? 'Creating account…' : 'Signing in…') : registering ? 'Create account' : 'Sign in'}</button>
+      <button className="btn" type="submit" disabled={busy}>{busy ? (registering ? 'Creating account…' : 'Signing in…') : registering ? 'Create admin account' : 'Sign in'}</button>
       <p className="auth-switch">
-        {registering ? 'Already have an account?' : 'New to Motion?'}{' '}
-        <button className="card-action" type="button" onClick={() => { setMode(registering ? 'login' : 'register'); setError(''); }}>
-          {registering ? 'Sign in' : 'Create an account'}
-        </button>
+        {registering ? 'Already have an account?' : 'Need access? Ask your account manager.'}
+        {registering && <>{' '}<button className="card-action" type="button" onClick={() => { setMode('login'); setError(''); }}>Sign in</button></>}
       </p>
+      {FIRST_ADMIN_FORM && !registering && (
+        <p className="auth-switch">
+          <button className="card-action" type="button" onClick={() => { setMode('register'); setError(''); }}>Set up the first admin</button>
+        </p>
+      )}
     </form>
   </main>;
 }
