@@ -9,8 +9,11 @@ import Insight from '../../components/studio/Insight';
 import PostDrawer from '../../components/studio/PostDrawer';
 import Thumb from '../../components/studio/Thumb';
 import { api } from '../../lib/api';
-import { errorText, formatName, platformName, statusName } from '../../lib/format';
-import { addDays, dayKey, fmtTime, needsMedia, postPlatform, reschedule, startOfDay, startOfWeek, type Post } from '../../lib/posts';
+import { errorText, formatName, platformName } from '../../lib/format';
+import { ApprovalBadge } from '../../components/approvals/ApprovalBadge';
+import { approvalView } from '../../lib/approvals';
+import '../../components/approvals/approvals.css';
+import { addDays, dayKey, fmtTime, needsMedia, postPlatform, postStatusLabel, reschedule, startOfDay, startOfWeek, type Post } from '../../lib/posts';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 type View = 'week' | 'month';
@@ -131,7 +134,7 @@ export default function Planner() {
   // Feed preview: the Instagram profile as it will look, with scheduled posts outlined.
   const feed = useMemo(() => {
     const ig = posts.filter((p) => postPlatform(p) === 'instagram' && p.status !== 'FAILED');
-    const sched = ig.filter((p) => p.status === 'SCHEDULED').sort((a, b) => +new Date(b.scheduledAt) - +new Date(a.scheduledAt));
+    const sched = ig.filter((p) => p.status === 'SCHEDULED' || p.status === 'PENDING_APPROVAL').sort((a, b) => +new Date(b.scheduledAt) - +new Date(a.scheduledAt));
     const done = ig.filter((p) => p.status === 'PUBLISHED').sort((a, b) => +new Date(b.scheduledAt) - +new Date(a.scheduledAt));
     return [...sched, ...done].slice(0, 12);
   }, [posts]);
@@ -236,7 +239,7 @@ export default function Planner() {
                     <div className="day-number"><span className="sr-only">{dayLong.format(day)}{key === todayKey ? ', today' : ''}, </span><span aria-hidden="true">{day.getDate()}</span><span className="sr-only">{items.length ? `${items.length} post${items.length === 1 ? '' : 's'}` : 'nothing scheduled'}</span></div>
                     <div className="pl-minis">
                       {items.slice(0, 4).map((p) => (
-                        <button key={p.id} type="button" className="pl-mini" draggable={p.status === 'SCHEDULED'} onDragStart={() => setDragId(p.id)} onDragEnd={() => { setDragId(null); setOverKey(null); }} onClick={() => setOpen(p)} aria-label={`${p.caption || formatName(p.mediaType)}, ${fmtTime(p.scheduledAt)}, ${statusName(p.status)}`}>
+                        <button key={p.id} type="button" className={`pl-mini ${apClass(p)}`} draggable={p.status === 'SCHEDULED'} onDragStart={() => setDragId(p.id)} onDragEnd={() => { setDragId(null); setOverKey(null); }} onClick={() => setOpen(p)} aria-label={`${p.caption || formatName(p.mediaType)}, ${fmtTime(p.scheduledAt)}, ${postStatusLabel(p)}`}>
                           <Thumb id={p.id} media={p.mediaUrls} mediaType={p.mediaType} caption={p.caption} ratio="1 / 1" />
                         </button>
                       ))}
@@ -256,9 +259,9 @@ export default function Planner() {
         <div className="pl-feed-top"><h2 id="feed-t" className="ov-eyebrow">Feed preview</h2><span className="st-chip"><Icon name="instagram" size={11} /> Instagram</span></div>
         {feed.length ? (
           <>
-            <div className="pl-prof"><span className="st-phone-av" /><div><b>{feedAccount || 'Your account'}</b><span className="muted">{feed.filter((p) => p.status === 'SCHEDULED').length} scheduled · outlined</span></div></div>
+            <div className="pl-prof"><span className="st-phone-av" /><div><b>{feedAccount || 'Your account'}</b><span className="muted">{feed.filter((p) => p.status === 'SCHEDULED').length} scheduled · outlined{feed.some((p) => p.status === 'PENDING_APPROVAL') ? ` · ${feed.filter((p) => p.status === 'PENDING_APPROVAL').length} awaiting approval (dashed)` : ''}</span></div></div>
             <div className="pl-grid">
-              {feed.map((p) => <button key={p.id} type="button" className={`pl-feed-item ${p.status === 'SCHEDULED' ? 'new' : ''}`} onClick={() => setOpen(p)} aria-label={`${p.caption || formatName(p.mediaType)}, ${statusName(p.status)}`}><Thumb id={p.id} media={p.mediaUrls} mediaType={p.mediaType} caption={p.caption} ratio="4 / 5" className="pl-feed-thumb" /></button>)}
+              {feed.map((p) => <button key={p.id} type="button" className={`pl-feed-item ${p.status === 'SCHEDULED' ? 'new' : ''} ${apClass(p)}`} onClick={() => setOpen(p)} aria-label={`${p.caption || formatName(p.mediaType)}, ${postStatusLabel(p)}`}><Thumb id={p.id} media={p.mediaUrls} mediaType={p.mediaType} caption={p.caption} ratio="4 / 5" className="pl-feed-thumb" /></button>)}
             </div>
             <p className="pl-feed-note">Newest first. Outlined posts are still scheduled.</p>
           </>
@@ -279,7 +282,7 @@ export default function Planner() {
                   <td><div className="table-main"><Thumb id={post.id} media={post.mediaUrls} mediaType={post.mediaType} caption={post.caption} className="pl-qthumb" /><div><strong>{post.caption || `${formatName(post.mediaType)} post`}</strong><span>{formatName(post.mediaType)}</span></div></div></td>
                   <td className="table-secondary">{platformName(platform)}{post.account?.name ? ` · ${post.account.name}` : ''}</td>
                   <td className="table-secondary">{new Date(post.scheduledAt).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</td>
-                  <td><span className={`status-pill status-${post.status.toLowerCase()}`}>{statusName(post.status)}</span></td>
+                  <td>{approvalView(post) ? <ApprovalBadge post={post} /> : <span className={`status-pill status-${post.status.toLowerCase()}`}>{postStatusLabel(post)}</span>}</td>
                 </tr>
               );
             })}
@@ -292,6 +295,9 @@ export default function Planner() {
   </div>;
 }
 
+/** Class that marks awaiting, changes-requested and approved posts apart from plain scheduled ones. */
+const apClass = (post: Post) => { const v = approvalView(post); return v ? `ap-${v}` : ''; };
+
 function EventCard({ post, dragging, onOpen, onDragStart, onDragEnd }: { post: Post; dragging: boolean; onOpen: () => void; onDragStart: () => void; onDragEnd: () => void }) {
   const platform = postPlatform(post);
   const movable = post.status === 'SCHEDULED';
@@ -299,7 +305,7 @@ function EventCard({ post, dragging, onOpen, onDragStart, onDragEnd }: { post: P
   return (
     <button
       type="button"
-      className={`pl-ev ${platform} ${dragging ? 'dragging' : ''} ${warn ? 'warn' : ''} ${movable ? 'movable' : ''}`}
+      className={`pl-ev ${platform} ${apClass(post)} ${dragging ? 'dragging' : ''} ${warn ? 'warn' : ''} ${movable ? 'movable' : ''}`}
       draggable={movable}
       onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', post.id); onDragStart(); }}
       onDragEnd={onDragEnd}
@@ -307,7 +313,7 @@ function EventCard({ post, dragging, onOpen, onDragStart, onDragEnd }: { post: P
       title={`${post.caption || formatName(post.mediaType)} · ${platformName(platform)} · ${fmtTime(post.scheduledAt)}`}
     >
       <Thumb id={post.id} media={post.mediaUrls} mediaType={post.mediaType} caption={post.caption} className="pl-ev-thumb" />
-      <span className="pl-ev-copy"><strong>{post.caption || `${formatName(post.mediaType)} post`}</strong><span>{fmtTime(post.scheduledAt)} · {warn ? (post.status === 'FAILED' ? 'Failed' : 'Needs media') : statusName(post.status)}</span></span>
+      <span className="pl-ev-copy"><strong>{post.caption || `${formatName(post.mediaType)} post`}</strong><span>{fmtTime(post.scheduledAt)} · {warn ? (post.status === 'FAILED' ? 'Failed' : 'Needs media') : postStatusLabel(post)}</span></span>
     </button>
   );
 }

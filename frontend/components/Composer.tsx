@@ -6,6 +6,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Icon } from './Icons';
 import { API, api, authHeaders } from '../lib/api';
+import { isStaff, useMe } from '../lib/session';
 import { isVideoUrl, mediaSrc, parseMedia } from '../lib/media';
 import { toLocalInput, type Draft } from '../lib/posts';
 import { FORMATS_BY_PLATFORM, errorText, formatName, platformFor, platformName, type Platform } from '../lib/format';
@@ -56,6 +57,9 @@ export default function Composer({ open, onOpenChange, accounts, accountsLoading
   onDraftChange?: () => void;
   onScheduled?: () => void;
 }) {
+  // Clients whose posts need approval submit them instead of scheduling. Staff are never held.
+  const me = useMe();
+  const needsApproval = !!me?.client?.requireApproval && !isStaff(me);
   const [accountId, setAccountId] = useState('');
   const [mediaType, setMediaType] = useState('IMAGE');
   const [caption, setCaption] = useState('');
@@ -238,14 +242,18 @@ export default function Composer({ open, onOpenChange, accounts, accountsLoading
     try {
       await inflight.current; // let a save that is mid-flight finish, so its draft id is known and gets cleaned up
       const when = new Date(scheduledAt);
-      await api('/posts', { method: 'POST', body: JSON.stringify({ accountId, platform, mediaType, caption, mediaUrls: mediaList, scheduledAt: when.toISOString(), ideaId: initialIdeaId || undefined, draftId: slot.current.id || undefined }) });
+      const saved = await api<{ status?: string } | null>('/posts', { method: 'POST', body: JSON.stringify({ accountId, platform, mediaType, caption, mediaUrls: mediaList, scheduledAt: when.toISOString(), ideaId: initialIdeaId || undefined, draftId: slot.current.id || undefined }) });
       resetEditor();
       onOpenChange(false);
-      toast.success(`Scheduled for ${whenFormat.format(when)}`, { description: `${platformName(platform)} · ${formatName(mediaType)}` });
+      if (saved?.status === 'PENDING_APPROVAL' || (needsApproval && saved?.status !== 'SCHEDULED')) {
+        toast.success('Sent for approval. Your account manager will review it.', { description: `${platformName(platform)} · ${formatName(mediaType)} · planned for ${whenFormat.format(when)}` });
+      } else {
+        toast.success(`Scheduled for ${whenFormat.format(when)}`, { description: `${platformName(platform)} · ${formatName(mediaType)}` });
+      }
       onScheduled?.();
       onDraftChange?.();
     } catch (e) {
-      setError(errorText(e, 'Could not schedule this post.'));
+      setError(errorText(e, needsApproval ? 'Could not submit this post.' : 'Could not schedule this post.'));
     } finally {
       setSaving(false);
     }
@@ -326,7 +334,7 @@ export default function Composer({ open, onOpenChange, accounts, accountsLoading
             </div>
 
             <div className="field">
-              <label className="field-label" htmlFor="scheduledAt">Publish on</label>
+              <label className="field-label" htmlFor="scheduledAt">{needsApproval ? 'Planned for' : 'Publish on'}</label>
               <input id="scheduledAt" type="datetime-local" value={scheduledAt} min={toLocalInput(new Date())} onChange={(e) => setScheduledAt(e.target.value)} required aria-describedby="tz-hint" />
               <span className="form-hint" id="tz-hint">Your local time ({Intl.DateTimeFormat().resolvedOptions().timeZone})</span>
             </div>
@@ -341,7 +349,7 @@ export default function Composer({ open, onOpenChange, accounts, accountsLoading
                 <Icon name="gauge" size={15} /> Check before posting
               </Link>
               <button className="btn" type="submit" disabled={saving || uploading || !!blocker} aria-describedby={blocker ? 'schedule-blocker' : undefined}>
-                <Icon name="calendar" size={15} /> {saving ? 'Scheduling…' : 'Schedule post'}
+                <Icon name="calendar" size={15} /> {needsApproval ? (saving ? 'Submitting…' : 'Submit for approval') : (saving ? 'Scheduling…' : 'Schedule post')}
               </button>
             </div>
           </form>
