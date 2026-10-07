@@ -558,6 +558,7 @@ describe('Client workspaces', () => {
     const TENANT = [
       'GET /accounts', 'POST /accounts', 'DELETE /accounts/:id',
       'GET /posts', 'POST /posts', 'PATCH /posts/:id', 'DELETE /posts/:id',
+      'POST /posts/:id/resubmit',
       'GET /drafts', 'POST /drafts', 'PATCH /drafts/:id', 'DELETE /drafts/:id',
       'GET /ideas', 'POST /ideas/generate', 'PATCH /ideas/:id', 'DELETE /ideas/:id',
       'GET /hooks', 'POST /hooks', 'POST /hooks/generate', 'PATCH /hooks/:id/favorite', 'POST /hooks/:id/use', 'DELETE /hooks/:id',
@@ -577,6 +578,8 @@ describe('Client workspaces', () => {
       'GET /admin/clients/:id/users', 'POST /admin/clients/:id/invite', 'GET /admin/clients/:id/channels', 'GET /admin/clients/:id/audit',
       'POST /admin/users/:id/resend-invite', 'POST /admin/users/:id/reset-link', 'POST /admin/users/:id/disable', 'POST /admin/users/:id/enable',
       'POST /admin/preview/start', 'POST /admin/preview/exit',
+      'GET /admin/approvals', 'GET /admin/approvals/count', 'GET /admin/clients/:id/approvals',
+      'POST /admin/approvals/:postId/approve', 'POST /admin/approvals/:postId/request-changes',
     ];
     // Signed in, but about the app or the caller rather than any client's data.
     const SESSION = ['GET /auth/me', 'GET /ai/status', 'GET /preflight/status', 'POST /auth/logout-all'];

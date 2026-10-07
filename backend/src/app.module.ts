@@ -42,10 +42,11 @@ import { InvitesController } from './auth/invites.controller';
 import { TeamService } from './auth/team.service';
 import { TeamController } from './team.controller';
 import { AdminClientsController } from './admin/admin-clients.controller';
+import { AdminApprovalsController } from './admin/admin-approvals.controller';
 
 @Module({
   imports: [ConfigModule.forRoot({ isGlobal: true }), ScheduleModule.forRoot(), ThrottlerModule.forRoot(throttlerOptions)],
-  controllers: [UsersController, InvitesController, TeamController, AdminClientsController, AuthController, PostsController, DraftsController, AccountsController, AutomationsController, CommentsController, WebhooksController, DashboardController, MediaController, AnalyticsController, IdeasController, HooksController, PreflightController],
+  controllers: [UsersController, InvitesController, TeamController, AdminClientsController, AdminApprovalsController, AuthController, PostsController, DraftsController, AccountsController, AutomationsController, CommentsController, WebhooksController, DashboardController, MediaController, AnalyticsController, IdeasController, HooksController, PreflightController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }, { provide: APP_GUARD, useClass: AuthGuard }, { provide: APP_GUARD, useClass: RolesGuard }, { provide: APP_GUARD, useClass: FeatureGuard }, PrismaService, SchedulerService, UploadsCleanupService, PublishersService, AutomationsService, MetaService, InsightsService, AiService, IdeasService, HooksService, TribeClient, PreflightService, FeaturesService, ClientsService, TenancyBackfillService, MediaOwnershipService, AuditService, InvitesService, TeamService],
 })
 export class AppModule {}
