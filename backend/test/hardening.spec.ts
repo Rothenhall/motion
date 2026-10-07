@@ -13,6 +13,7 @@ import { UPLOAD_DIR, looksLike } from '../src/media.controller';
 import { UploadsCleanupService } from '../src/uploads-cleanup.service';
 import { UPLOAD_NAME, uploadNameOf } from '../src/upload-names';
 import { encryptToken, hashPassword, signToken } from '../src/auth/crypto';
+import { ACME_DISABLED_EMAIL, ACME_INVITED_EMAIL, CLIENT_EMAIL, DEMO_EMAIL, DEMO_PASSWORD, NORTHWIND_EMAIL, PAUSED_EMAIL, SEED_EMAILS, removeSeed, seedDemo } from '../src/scripts/seed-demo';
 import { FeaturesService } from '../src/tenancy/features.service';
 
 /**
@@ -306,6 +307,88 @@ describe('Hardening', () => {
       const name = nameOf((await upload(A.token, JPEG, 'image/jpeg', 'fresh.jpg')).body.url);
       await cleanup().sweep();
       expect(existsSync(join(UPLOAD_DIR, name))).toBe(true);
+    });
+  });
+
+  // ---------------------------------------------------------------- the demo seed
+
+  describe('demo seed', () => {
+    const snapshot = async () => ({
+      users: await prisma.user.count({ where: { email: { in: SEED_EMAILS } } }),
+      clients: await prisma.client.count({ where: { users: { some: { email: { in: SEED_EMAILS } } } } }),
+      accounts: await prisma.socialAccount.count({ where: { client: { users: { some: { email: { in: SEED_EMAILS } } } } } }),
+      posts: await prisma.scheduledPost.count({ where: { account: { client: { users: { some: { email: { in: SEED_EMAILS } } } } } } }),
+      audit: await prisma.adminAuditLog.count({ where: { clientId: { in: (await prisma.user.findMany({ where: { email: { in: SEED_EMAILS } }, select: { clientId: true } })).map((u) => u.clientId as string) } } }),
+    });
+    const login = (email: string) => http().post('/auth/login').send({ email, password: DEMO_PASSWORD });
+
+    afterAll(() => removeSeed(prisma));
+
+    it('is repeatable, and leaves everything that is not sample data alone', async () => {
+      const before = { clients: await prisma.client.count({ where: { id: { in: [A.client.id, B.client.id] } } }), accounts: await prisma.socialAccount.count({ where: { clientId: { in: [A.client.id, B.client.id] } } }) };
+      await seedDemo(prisma);
+      const first = await snapshot();
+      await seedDemo(prisma);
+      expect(await snapshot()).toEqual(first);
+      expect(first).toMatchObject({ users: 6, clients: 4, accounts: 5 });
+      expect(await prisma.client.count({ where: { id: { in: [A.client.id, B.client.id] } } })).toBe(before.clients);
+      expect(await prisma.socialAccount.count({ where: { clientId: { in: [A.client.id, B.client.id] } } })).toBe(before.accounts);
+      expect(await prisma.user.count({ where: { id: { in: [A.user.id, B.user.id, admin.user.id] } } })).toBe(3);
+    });
+
+    it('does not remove a workspace that someone outside the sample data also belongs to', async () => {
+      await seedDemo(prisma);
+      const acme = await prisma.user.findUniqueOrThrow({ where: { email: CLIENT_EMAIL } });
+      const stranger = await prisma.user.create({ data: { email: 'hardening-stranger@example.com', passwordHash: 'x', role: Role.CLIENT_MEMBER, clientId: acme.clientId } });
+      made.users.push(stranger.id);
+      await seedDemo(prisma);
+      // Acme's sample user is replaced, but the workspace the stranger belongs to stays.
+      expect(await prisma.client.count({ where: { id: acme.clientId as string } })).toBe(1);
+      await prisma.user.delete({ where: { id: stranger.id } });
+      await prisma.client.delete({ where: { id: acme.clientId as string } }); // the kept workspace is now empty
+      await removeSeed(prisma);
+      await seedDemo(prisma);
+    });
+
+    it('builds the four clients the admin console is shown with', async () => {
+      const staff = await login(DEMO_EMAIL).expect(200);
+      const clients = (await http().get('/admin/clients').set(bearer(staff.body.token))).body.filter((c: any) => /sample client/.test(c.name));
+      expect(clients.map((c: any) => c.name.split(' (')[0]).sort()).toEqual(['Acme Bakery', 'Northwind Studio', 'Paused Co']);
+      const by = (n: string) => clients.find((c: any) => c.name.startsWith(n));
+      expect(by('Paused Co')).toMatchObject({ status: 'SUSPENDED' });
+      expect(by('Northwind')).toMatchObject({ failedPosts: 1, disconnectedChannels: 1, channels: [expect.objectContaining({ provider: 'instagram' })] });
+      expect(by('Acme')).toMatchObject({ pendingInvites: 1, seatsUsed: 2 });
+
+      const people = (await http().get(`/admin/clients/${by('Acme').id}/users`).set(bearer(staff.body.token)).expect(200)).body.members;
+      expect(people.map((p: any) => [p.email, p.status]).sort()).toEqual([[ACME_DISABLED_EMAIL, 'DISABLED'], [ACME_INVITED_EMAIL, 'INVITED'], [CLIENT_EMAIL, 'ACTIVE']]);
+      const activity = (await http().get(`/admin/clients/${by('Acme').id}/audit`).set(bearer(staff.body.token)).expect(200)).body;
+      expect(activity.map((a: any) => a.action)).toEqual(expect.arrayContaining(['client.create', 'feature.set', 'channel.connect', 'user.invite']));
+      expect(activity[0].actor.email).toBeTruthy();
+    });
+
+    it('gives each sample login the experience it is meant to show', async () => {
+      const nw = (await login(NORTHWIND_EMAIL).expect(200)).body.token;
+      const me = (await http().get('/auth/me').set(bearer(nw)).expect(200)).body;
+      expect(me.features).toMatchObject({ analytics: false, ai: false, planner: true, compose: true });
+      expect((await http().get('/analytics').set(bearer(nw)).expect(403)).body.code).toBe('FEATURE_DISABLED');
+      expect((await http().get('/posts').set(bearer(nw)).expect(200)).body.length).toBeGreaterThan(0);
+      expect((await http().get('/accounts').set(bearer(nw)).expect(200)).body.map((a: any) => a.provider)).toEqual(['instagram']); // the disconnected one is not listed
+
+      const acme = (await login(CLIENT_EMAIL).expect(200)).body.token;
+      expect((await http().get('/team/members').set(bearer(acme)).expect(200)).body.seats).toEqual({ used: 2, limit: 3 });
+
+      // A paused client's contact can sign in but is turned away at once; the invited and switched-off people cannot sign in at all.
+      const paused = (await login(PAUSED_EMAIL).expect(200)).body.token;
+      expect((await http().get('/auth/me').set(bearer(paused)).expect(403)).body.code).toBe('CLIENT_SUSPENDED');
+      await login(ACME_INVITED_EMAIL).expect(401);
+      await login(ACME_DISABLED_EMAIL).expect(401);
+    });
+
+    it('never publishes anything from the sample data', async () => {
+      const due = await prisma.scheduledPost.count({ where: { status: 'SCHEDULED', scheduledAt: { lte: new Date() }, account: { client: { users: { some: { email: { in: SEED_EMAILS } } } } } } });
+      expect(due).toBe(0);
+      const tokens = await prisma.socialAccount.findMany({ where: { client: { users: { some: { email: { in: SEED_EMAILS } } } } }, select: { accessToken: true } });
+      expect(tokens.every((t) => t.accessToken.startsWith('enc:v1:'))).toBe(true);
     });
   });
 
