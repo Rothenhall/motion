@@ -1,6 +1,6 @@
 import { Controller, Get } from '@nestjs/common';
 import { PrismaService } from './prisma.service';
-import { AuthUser, CurrentUser } from './auth/auth.guard';
+import { Ctx, RequestContext, accountScope, clientScope } from './tenancy/ctx';
 
 const accountSelect = { id: true, provider: true, externalId: true, name: true, tokenExpires: true, createdAt: true } as const;
 
@@ -9,14 +9,14 @@ export class DashboardController {
   constructor(private prisma: PrismaService) {}
 
   @Get()
-  async summary(@CurrentUser() user: AuthUser) {
-    const owned = { account: { userId: user.id } };
+  async summary(@Ctx() ctx: RequestContext) {
+    const owned = accountScope(ctx);
     const startOfMonth = new Date();
     startOfMonth.setDate(1);
     startOfMonth.setHours(0, 0, 0, 0);
 
     const [accounts, scheduled, published, failed, activeAutomationCount, automationCount, upcomingPosts] = await Promise.all([
-      this.prisma.socialAccount.findMany({ where: { userId: user.id }, orderBy: { createdAt: 'desc' }, select: accountSelect }),
+      this.prisma.socialAccount.findMany({ where: clientScope(ctx), orderBy: { createdAt: 'desc' }, select: accountSelect }),
       this.prisma.scheduledPost.count({ where: { ...owned, status: 'SCHEDULED' } }),
       this.prisma.scheduledPost.count({ where: { ...owned, status: 'PUBLISHED', updatedAt: { gte: startOfMonth } } }),
       this.prisma.scheduledPost.count({ where: { ...owned, status: 'FAILED' } }),

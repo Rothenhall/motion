@@ -1,6 +1,6 @@
 import { BadRequestException, Body, Controller, Delete, Get, NotFoundException, Param, Post } from '@nestjs/common';
 import { PrismaService } from './prisma.service';
-import { AuthUser, CurrentUser } from './auth/auth.guard';
+import { Ctx, RequestContext, clientScope, requireClient } from './tenancy/ctx';
 import { encryptToken } from './auth/crypto';
 
 const PROVIDERS = ['facebook_page', 'instagram', 'threads'];
@@ -11,12 +11,12 @@ export class AccountsController {
   constructor(private prisma: PrismaService) {}
 
   @Get()
-  list(@CurrentUser() user: AuthUser) {
-    return this.prisma.socialAccount.findMany({ where: { userId: user.id }, orderBy: { createdAt: 'desc' }, select: accountSelect });
+  list(@Ctx() ctx: RequestContext) {
+    return this.prisma.socialAccount.findMany({ where: clientScope(ctx), orderBy: { createdAt: 'desc' }, select: accountSelect });
   }
 
   @Post()
-  create(@CurrentUser() user: AuthUser, @Body() body: { provider?: string; externalId?: string; name?: string; accessToken?: string; tokenExpires?: string }) {
+  create(@Ctx() ctx: RequestContext, @Body() body: { provider?: string; externalId?: string; name?: string; accessToken?: string; tokenExpires?: string }) {
     const provider = body.provider?.trim();
     const externalId = body.externalId?.trim();
     const accessToken = body.accessToken?.trim();
@@ -28,14 +28,14 @@ export class AccountsController {
     if (tokenExpires && Number.isNaN(tokenExpires.getTime())) throw new BadRequestException('Token expiry must be a valid date.');
 
     return this.prisma.socialAccount.create({
-      data: { userId: user.id, provider, externalId, name: body.name?.trim() || null, accessToken: encryptToken(accessToken), tokenExpires },
+      data: { userId: ctx.user.id, clientId: requireClient(ctx), provider, externalId, name: body.name?.trim() || null, accessToken: encryptToken(accessToken), tokenExpires },
       select: accountSelect,
     });
   }
 
   @Delete(':id')
-  async remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    const account = await this.prisma.socialAccount.findFirst({ where: { id, userId: user.id }, select: { id: true } });
+  async remove(@Ctx() ctx: RequestContext, @Param('id') id: string) {
+    const account = await this.prisma.socialAccount.findFirst({ where: { id, ...clientScope(ctx) }, select: { id: true } });
     if (!account) throw new NotFoundException('Account not found.');
     return this.prisma.socialAccount.delete({ where: { id }, select: accountSelect });
   }

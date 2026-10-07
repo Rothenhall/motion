@@ -1,18 +1,25 @@
 /**
- * Sample workspace for trying the app, and for checking screens without using a real account.
+ * Sample workspaces for trying the app, and for checking screens without using a real account.
  *
  *   docker compose exec -e DEMO_SEED=yes backend node dist/scripts/seed-demo.js
  *   (or, outside Docker, after `npm run build`:  DEMO_SEED=yes npm run seed:demo)
  *
- * Sign in as demo@motion.test with the password below. Running it again resets that one user's data; no other user is
+ * Two workspaces are created:
+ *   - "Demo studio": a month of numbers, posts, drafts and ideas. demo@motion.test is an ADMIN with this as their home
+ *     workspace, and can act as any other client.
+ *   - "Acme Bakery" (a sample client): its own channel and a little content. acme@motion.test is its client user, with AI off
+ *     as for any client an agency creates, so the two logins show how clients are kept apart.
+ *
+ * Sign in with the password below. Running it again resets these two users and their workspaces; nothing else is
  * touched. The channel holds a fake token, so nothing can be published to a real platform from it, and the sample posts
  * are scheduled days ahead so the publisher leaves them alone.
  */
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Role } from '@prisma/client';
 import { encryptToken, hashPassword } from '../auth/crypto';
 
 export const DEMO_EMAIL = 'demo@motion.test';
-export const DEMO_PASSWORD = 'motion-demo-2026'; // for this local sample account only
+export const CLIENT_EMAIL = 'acme@motion.test';
+export const DEMO_PASSWORD = 'motion-demo-2026'; // for these local sample accounts only
 
 const DAY = 86_400_000;
 
@@ -29,11 +36,20 @@ async function main() {
   }
   const prisma = new PrismaClient();
   try {
-    await prisma.user.deleteMany({ where: { email: DEMO_EMAIL } }); // cascades to its channels, posts, drafts and ideas
-    const user = await prisma.user.create({ data: { email: DEMO_EMAIL, passwordHash: await hashPassword(DEMO_PASSWORD) } });
+    // Start clean: remove the two sample users (which removes what they own), then their now-empty workspaces.
+    const old = await prisma.user.findMany({ where: { email: { in: [DEMO_EMAIL, CLIENT_EMAIL] } }, select: { clientId: true } });
+    await prisma.user.deleteMany({ where: { email: { in: [DEMO_EMAIL, CLIENT_EMAIL] } } });
+    await prisma.client.deleteMany({ where: { id: { in: old.map((u) => u.clientId).filter((c): c is string => !!c) } } });
+
+    const passwordHash = await hashPassword(DEMO_PASSWORD);
+    const client = await prisma.client.create({ data: { name: 'Demo studio (sample data)' } });
+    await prisma.clientFeatureFlag.create({ data: { clientId: client.id, featureKey: 'ai', enabled: true } });
+    const user = await prisma.user.create({ data: { email: DEMO_EMAIL, passwordHash, role: Role.ADMIN, clientId: client.id } });
+    await prisma.client.update({ where: { id: client.id }, data: { createdById: user.id } });
+    const owner = { userId: user.id, clientId: client.id };
     const account = await prisma.socialAccount.create({
       data: {
-        userId: user.id, provider: 'instagram', externalId: 'demo-instagram', name: 'Demo studio (sample data)',
+        ...owner, provider: 'instagram', externalId: 'demo-instagram', name: 'Demo studio (sample data)',
         accessToken: encryptToken('demo-token-not-a-real-credential'),
         meta: JSON.stringify({ username: 'demo.studio', followers_count: 2640, media_count: 96 }),
         insightsSyncedAt: new Date(),
@@ -87,23 +103,43 @@ async function main() {
 
     await prisma.postDraft.createMany({
       data: [
-        { userId: user.id, accountId: account.id, platform: 'instagram', mediaType: 'REELS', caption: 'Draft: what we learned from 100 reels', mediaUrls: '[]' },
-        { userId: user.id, mediaType: 'IMAGE', caption: 'Draft: a quick note for the weekend', mediaUrls: '[]' },
+        { ...owner, accountId: account.id, platform: 'instagram', mediaType: 'REELS', caption: 'Draft: what we learned from 100 reels', mediaUrls: '[]' },
+        { ...owner, mediaType: 'IMAGE', caption: 'Draft: a quick note for the weekend', mediaUrls: '[]' },
       ],
     });
 
     await prisma.brandProfile.create({
-      data: { userId: user.id, niche: 'Social media for small teams', audience: 'Founders and marketers', voice: 'Warm, direct, practical', pillars: JSON.stringify(['Education', 'Habits', 'Community']) },
+      data: { ...owner, niche: 'Social media for small teams', audience: 'Founders and marketers', voice: 'Warm, direct, practical', pillars: JSON.stringify(['Education', 'Habits', 'Community']) },
     });
     await prisma.contentIdea.createMany({
       data: [
-        { userId: user.id, title: 'The first-second test', hook: 'You have one second. Is this the first thing they see?', angle: 'A quick teardown of three openings', format: 'REEL', platform: 'instagram', pillar: 'Education', status: 'NEW', hashtags: '["contentstrategy","reels"]' },
-        { userId: user.id, title: 'Plan the week on Monday', hook: 'Ten minutes on Monday saves five hours of scrambling.', format: 'CAROUSEL', platform: 'instagram', pillar: 'Habits', status: 'SAVED', hashtags: '["planning"]' },
-        { userId: user.id, title: 'Ask the audience', hook: 'What is the one thing you wish you knew sooner?', format: 'IMAGE', platform: 'instagram', pillar: 'Community', status: 'NEW', hashtags: '[]' },
+        { ...owner, title: 'The first-second test', hook: 'You have one second. Is this the first thing they see?', angle: 'A quick teardown of three openings', format: 'REEL', platform: 'instagram', pillar: 'Education', status: 'NEW', hashtags: '["contentstrategy","reels"]' },
+        { ...owner, title: 'Plan the week on Monday', hook: 'Ten minutes on Monday saves five hours of scrambling.', format: 'CAROUSEL', platform: 'instagram', pillar: 'Habits', status: 'SAVED', hashtags: '["planning"]' },
+        { ...owner, title: 'Ask the audience', hook: 'What is the one thing you wish you knew sooner?', format: 'IMAGE', platform: 'instagram', pillar: 'Community', status: 'NEW', hashtags: '[]' },
       ],
     });
 
-    console.log(`Demo workspace ready. Sign in as ${DEMO_EMAIL} (password: ${DEMO_PASSWORD}).`);
+    // A second, separate client: shows that one client never sees another, and what a client user's app looks like.
+    const acme = await prisma.client.create({ data: { name: 'Acme Bakery (sample client)', createdById: user.id } });
+    const acmeUser = await prisma.user.create({ data: { email: CLIENT_EMAIL, passwordHash, role: Role.CLIENT_POC, clientId: acme.id } });
+    const acmeOwner = { userId: acmeUser.id, clientId: acme.id };
+    const acmeAccount = await prisma.socialAccount.create({
+      data: { ...acmeOwner, provider: 'instagram', externalId: 'demo-acme-instagram', name: 'Acme Bakery (sample data)', accessToken: encryptToken('demo-token-not-a-real-credential'), meta: JSON.stringify({ username: 'acme.bakery', followers_count: 840, media_count: 31 }), insightsSyncedAt: new Date() },
+    });
+    for (const [caption, mediaType, ahead] of [['Fresh sourdough every Saturday', 'IMAGE', 1.5], ['Meet the baker behind the counter', 'REELS', 4]] as const) {
+      const at = new Date(now + ahead * DAY); at.setHours(8, 30, 0, 0);
+      await prisma.scheduledPost.create({ data: { accountId: acmeAccount.id, platform: 'instagram', mediaType, caption, mediaUrls: '[]', scheduledAt: at, status: 'SCHEDULED', createdById: acmeUser.id } });
+    }
+    const acmePublished = await prisma.scheduledPost.create({
+      data: { accountId: acmeAccount.id, platform: 'instagram', mediaType: 'IMAGE', caption: 'Our croissants sold out by 9am', mediaUrls: '[]', scheduledAt: new Date(now - 3 * DAY), status: 'PUBLISHED', externalId: 'demo-acme-post-1', permalink: 'https://www.instagram.com/p/acme1/', createdById: acmeUser.id },
+    });
+    await prisma.postInsight.create({ data: { postId: acmePublished.id, accountId: acmeAccount.id, views: 1900, reach: 1400, likes: 120, comments: 14, shares: 20, saves: 33, engagements: 187 } });
+    await prisma.postDraft.create({ data: { ...acmeOwner, accountId: acmeAccount.id, platform: 'instagram', mediaType: 'IMAGE', caption: 'Draft: new autumn menu', mediaUrls: '[]' } });
+    await prisma.brandProfile.create({ data: { ...acmeOwner, niche: 'A neighbourhood bakery', audience: 'Local families', voice: 'Friendly and warm', pillars: JSON.stringify(['Behind the scenes', 'New bakes']) } });
+
+    console.log(`Sample workspaces ready (password: ${DEMO_PASSWORD}).
+  ${DEMO_EMAIL}: admin, home workspace "Demo studio"
+  ${CLIENT_EMAIL}: client user of "Acme Bakery"`);
   } finally {
     await prisma.$disconnect();
   }

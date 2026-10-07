@@ -1,7 +1,8 @@
 import { Controller, Get, HttpCode, Post, Query } from '@nestjs/common';
 import { PrismaService } from './prisma.service';
 import { InsightsService } from './insights.service';
-import { AuthUser, CurrentUser } from './auth/auth.guard';
+import { Ctx, RequestContext, accountScope, clientScope, requireClient } from './tenancy/ctx';
+import { RequireFeature } from './tenancy/guards';
 
 const DAY = 86_400_000;
 const RANGES = [7, 30, 90];
@@ -10,12 +11,13 @@ const pctChange = (now: number, before: number) => (before > 0 ? Math.round(((no
 const rate = (engagements: number, views: number) => (views > 0 ? Math.round((engagements / views) * 1000) / 10 : null);
 
 @Controller('analytics')
+@RequireFeature('analytics')
 export class AnalyticsController {
   constructor(private prisma: PrismaService, private insights: InsightsService) {}
 
   @Get()
-  async summary(@CurrentUser() user: AuthUser, @Query('days') daysParam?: string) {
-    const owned = { account: { userId: user.id } };
+  async summary(@Ctx() ctx: RequestContext, @Query('days') daysParam?: string) {
+    const owned = accountScope(ctx);
     const days = RANGES.includes(Number(daysParam)) ? Number(daysParam) : 30;
     const now = new Date();
     const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
@@ -25,7 +27,7 @@ export class AnalyticsController {
 
     const [accounts, rows, followerRows, published, prevPublished, topPosts, allPostInsights] = await Promise.all([
       this.prisma.socialAccount.findMany({
-        where: { userId: user.id },
+        where: clientScope(ctx),
         orderBy: { createdAt: 'asc' },
         select: { id: true, provider: true, name: true, insightsSyncedAt: true, insightsError: true },
       }),
@@ -105,7 +107,7 @@ export class AnalyticsController {
     return {
       range: { days, since: new Date(since), until: new Date(today) },
       hasInsights: rows.length > 0 || followerRows.length > 0,
-      syncing: this.insights.isSyncing(),
+      syncing: this.insights.isSyncing(requireClient(ctx)),
       lastSyncedAt: syncTimes.length ? new Date(Math.min(...syncTimes)) : null,
       totals: {
         views: current.views,
@@ -138,8 +140,9 @@ export class AnalyticsController {
   /** Kicks off a sync and returns immediately; poll GET /analytics for `syncing`. */
   @Post('sync')
   @HttpCode(202)
-  sync() {
-    this.insights.syncAll().catch(() => undefined);
+  sync(@Ctx() ctx: RequestContext) {
+    // Only this client's channels: one client must not be able to start a sync of everyone's.
+    this.insights.syncClient(requireClient(ctx)).catch(() => undefined);
     return { syncing: true };
   }
 }

@@ -3,6 +3,7 @@ import { PrismaService } from './prisma.service';
 import { PublishersService } from './publishers.service';
 import { decryptToken } from './auth/crypto';
 import { PRIVATE_REPLY_WINDOW_MS } from './meta-config';
+import { FeaturesService } from './tenancy/features.service';
 
 const PROVIDER_FOR: Record<string, string> = { instagram: 'instagram', facebook: 'facebook_page' };
 
@@ -23,7 +24,7 @@ export class AutomationsService {
   private readonly log = new Logger(AutomationsService.name);
   private pending = new Set<Promise<void>>();
 
-  constructor(private prisma: PrismaService, private pub: PublishersService) {}
+  constructor(private prisma: PrismaService, private pub: PublishersService, private features: FeaturesService) {}
 
   /**
    * Runs automations after the webhook has been answered: Meta wants a 200
@@ -74,6 +75,9 @@ export class AutomationsService {
       if (!claimed) continue;
       const key = { accountId_commentId: { accountId: account.id, commentId: opts.commentId } };
 
+      // The comment is recorded for the inbox either way; rules only act for active clients that have automations switched on.
+      if (!(await this.mayAutomate(account.clientId))) continue;
+
       const rule = account.rules.find((r) => {
         if (r.trigger === 'COMMENT_KEYWORD') return !!r.keyword && (opts.text || '').toLowerCase().includes(r.keyword.toLowerCase());
         return r.trigger === 'ALL_COMMENTS';
@@ -111,6 +115,13 @@ export class AutomationsService {
   }
 
   /** Comments the account wrote itself (including Motion's own replies) never trigger rules. */
+  private async mayAutomate(clientId: string | null): Promise<boolean> {
+    if (!clientId) return true;
+    const client = await this.prisma.client.findUnique({ where: { id: clientId }, select: { status: true } });
+    if (!client || client.status === 'SUSPENDED') return false;
+    return (await this.features.forClient(clientId)).automations;
+  }
+
   private isOwnComment(account: { externalId: string; meta: string | null }, opts: IncomingComment) {
     if (opts.senderId && opts.senderId === account.externalId) return true;
     if (!opts.senderUsername) return false;

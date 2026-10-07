@@ -1,17 +1,19 @@
 import { BadRequestException, Body, Controller, Get, Post } from '@nestjs/common';
 import { PrismaService } from './prisma.service';
 import { PublishersService } from './publishers.service';
-import { AuthUser, CurrentUser } from './auth/auth.guard';
 import { decryptToken } from './auth/crypto';
+import { Ctx, RequestContext, accountScope, clientScope } from './tenancy/ctx';
+import { RequireFeature } from './tenancy/guards';
 
 @Controller('comments')
+@RequireFeature('inbox')
 export class CommentsController {
   constructor(private prisma: PrismaService, private pub: PublishersService) {}
 
   /** Recent comments, each with the post it was left on when we published that post ourselves. */
   @Get('events')
-  async events(@CurrentUser() user: AuthUser) {
-    const events = await this.prisma.commentEvent.findMany({ where: { account: { userId: user.id } }, orderBy: { createdAt: 'desc' }, take: 100 });
+  async events(@Ctx() ctx: RequestContext) {
+    const events = await this.prisma.commentEvent.findMany({ where: accountScope(ctx), orderBy: { createdAt: 'desc' }, take: 100 });
     const mediaIds = [...new Set(events.map((e) => e.mediaId).filter((m): m is string => !!m))];
     if (!mediaIds.length) return events.map((e) => ({ ...e, post: null }));
 
@@ -20,7 +22,7 @@ export class CommentsController {
     const tails = [...new Set(mediaIds.map(tail))];
     const posts = await this.prisma.scheduledPost.findMany({
       where: {
-        account: { userId: user.id },
+        ...accountScope(ctx),
         status: 'PUBLISHED',
         OR: tails.flatMap((t) => [{ externalId: t }, { externalId: { endsWith: `_${t}` } }]),
       },
@@ -35,7 +37,8 @@ export class CommentsController {
   }
 
   @Post('reply')
-  async reply(@CurrentUser() user: AuthUser, @Body() body: { platform?: string; commentId?: string; text?: string; accountId?: string; dm?: boolean }) {
+  @RequireFeature('inbox-reply')
+  async reply(@Ctx() ctx: RequestContext, @Body() body: { platform?: string; commentId?: string; text?: string; accountId?: string; dm?: boolean }) {
     const platform = body.platform?.trim();
     const commentId = body.commentId?.trim();
     const text = body.text?.trim();
@@ -43,8 +46,8 @@ export class CommentsController {
     if (!commentId || !text) throw new BadRequestException('A comment ID and message are required.');
 
     const account = body.accountId
-      ? await this.prisma.socialAccount.findFirst({ where: { id: body.accountId, userId: user.id } })
-      : await this.prisma.socialAccount.findFirst({ where: { userId: user.id, provider: platform === 'instagram' ? 'instagram' : 'facebook_page' }, orderBy: { createdAt: 'asc' } });
+      ? await this.prisma.socialAccount.findFirst({ where: { id: body.accountId, ...clientScope(ctx) } })
+      : await this.prisma.socialAccount.findFirst({ where: { ...clientScope(ctx), provider: platform === 'instagram' ? 'instagram' : 'facebook_page' }, orderBy: { createdAt: 'asc' } });
     if (!account) throw new BadRequestException('Connect a matching account before replying.');
     if (platform === 'instagram' && account.provider !== 'instagram') throw new BadRequestException('Select an Instagram account for this reply.');
     if (platform === 'facebook' && account.provider !== 'facebook_page') throw new BadRequestException('Select a Facebook Page account for this reply.');

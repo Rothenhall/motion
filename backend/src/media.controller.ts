@@ -4,12 +4,14 @@ import { diskStorage } from 'multer';
 import { existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { randomUUID } from 'crypto';
+import { Ctx, RequestContext, requireClient } from './tenancy/ctx';
+import { MediaOwnershipService } from './tenancy/media-ownership.service';
 
 export const UPLOAD_DIR = join(process.cwd(), 'uploads');
 if (!existsSync(UPLOAD_DIR)) mkdirSync(UPLOAD_DIR, { recursive: true });
 
-/** What the uploader names a file: a timestamp, eight hex characters and the extension. */
-export const UPLOAD_NAME = /^\d+-[0-9a-f]{8}\.([a-z0-9]+)$/;
+/** What the uploader names a file: a timestamp, eight hex characters and the extension (defined in upload-names.ts). */
+export { UPLOAD_NAME } from './upload-names';
 
 const ALLOWED = new Set([
   'image/jpeg', 'image/png', 'image/webp', 'image/gif',
@@ -19,6 +21,8 @@ const ALLOWED = new Set([
 /** User uploads a file -> we host it publicly -> Meta fetches it when publishing. */
 @Controller('media')
 export class MediaController {
+  constructor(private ownership: MediaOwnershipService) {}
+
   @Post('upload')
   @UseInterceptors(
     FileInterceptor('file', {
@@ -39,8 +43,10 @@ export class MediaController {
       },
     }),
   )
-  async upload(@UploadedFile() file: Express.Multer.File) {
+  async upload(@Ctx() ctx: RequestContext, @UploadedFile() file: Express.Multer.File) {
     if (!file) throw new BadRequestException('Choose a file to upload.');
+    // The file belongs to the client it was uploaded for, so another client cannot attach it to their own posts.
+    await this.ownership.record(file.filename, requireClient(ctx), ctx.user.id);
     const base = (process.env.PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3001}`).replace(/\/$/, '');
     const kind = file.mimetype.startsWith('video/') ? 'VIDEO' : 'IMAGE';
     return { url: `${base}/media/${file.filename}`, filename: file.originalname, size: file.size, kind };

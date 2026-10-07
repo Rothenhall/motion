@@ -5,6 +5,7 @@ import { existsSync } from 'fs';
 import { join } from 'path';
 import { ContentCheck, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import { MediaOwnershipService } from '../tenancy/media-ownership.service';
 import { AiService, PLATFORMS, PreflightReport, ReviewImage } from '../ai/ai.service';
 import { UPLOAD_DIR, UPLOAD_NAME } from '../media.controller';
 import { AudienceSimulation, BrainMap, NotCachedError, TribeClient } from './tribe.client';
@@ -14,7 +15,7 @@ export type CheckInput = { platform?: string; caption?: string; text?: string; m
 type Kind = 'VIDEO' | 'IMAGE' | 'CAROUSEL' | 'TEXT';
 type Media = { file: string; path: string; mime: string; url: string };
 
-const MAX_QUEUED_PER_USER = 10;
+const MAX_QUEUED_PER_CLIENT = 10;
 const MAX_IMAGES = 10;
 const MAX_VARIANTS = 3;
 // TRIBE cost grows with length; reels are rarely longer than this.
@@ -25,7 +26,7 @@ const MIME: Record<string, string> = { mp4: 'video/mp4', mov: 'video/quicktime',
 
 /** Every column except the brain map, which can be megabytes; GET /preflight/:id/brain serves it. */
 const WITHOUT_BRAIN = {
-  id: true, userId: true, groupId: true, label: true, kind: true, platform: true, caption: true, text: true, mediaUrls: true,
+  id: true, userId: true, clientId: true, groupId: true, label: true, kind: true, platform: true, caption: true, text: true, mediaUrls: true,
   mediaHash: true, status: true, engine: true, signals: true, report: true, brainStatus: true, error: true, attempts: true,
   startedAt: true, completedAt: true, createdAt: true, updatedAt: true,
 } satisfies Prisma.ContentCheckSelect;
@@ -39,7 +40,7 @@ export class PreflightService {
   private readonly log = new Logger(PreflightService.name);
   private draining = false;
 
-  constructor(private prisma: PrismaService, private ai: AiService, private tribe: TribeClient) {}
+  constructor(private prisma: PrismaService, private ai: AiService, private tribe: TribeClient, private media: MediaOwnershipService) {}
 
   status() {
     return { ai: this.ai.configured, audienceSimulation: this.tribe.configured };
@@ -47,12 +48,12 @@ export class PreflightService {
 
   // ---- create ----
 
-  async create(userId: string, body: CheckInput) {
-    const [check] = await this.createMany(userId, [body], null);
+  async create(clientId: string, userId: string, body: CheckInput) {
+    const [check] = await this.createMany(clientId, userId, [body], null);
     return check;
   }
 
-  async compare(userId: string, body: { platform?: string; caption?: string; variants?: unknown }) {
+  async compare(clientId: string, userId: string, body: { platform?: string; caption?: string; variants?: unknown }) {
     if (!Array.isArray(body.variants) || body.variants.length < 2 || body.variants.length > MAX_VARIANTS) {
       throw new BadRequestException(`Add between 2 and ${MAX_VARIANTS} versions to compare.`);
     }
@@ -64,16 +65,18 @@ export class PreflightService {
       label: v?.label || `Version ${String.fromCharCode(65 + i)}`,
     }));
     const groupId = randomUUID();
-    return { groupId, checks: await this.createMany(userId, variants, groupId) };
+    return { groupId, checks: await this.createMany(clientId, userId, variants, groupId) };
   }
 
-  private async createMany(userId: string, inputs: CheckInput[], groupId: string | null) {
+  private async createMany(clientId: string, userId: string, inputs: CheckInput[], groupId: string | null) {
     if (!this.ai.configured) throw new ServiceUnavailableException('Pre-flight checks need OPENROUTER_API_KEY in backend/.env.');
     const rows = inputs.map((input) => this.validate(input));
     if (new Set(rows.map((r) => r.kind)).size > 1) throw new BadRequestException('Compare versions of the same kind of post (all videos, all images, or all text).');
-    const queued = await this.prisma.contentCheck.count({ where: { userId, status: { in: ['PENDING', 'RUNNING'] } } });
-    if (queued + rows.length > MAX_QUEUED_PER_USER) throw new BadRequestException('You have several checks running already. Wait for them to finish first.');
-    const created = await this.prisma.$transaction(rows.map((row) => this.prisma.contentCheck.create({ data: { ...row, userId, groupId } })));
+    // Uploads must belong to this client, so one client cannot run a check on another's file.
+    for (const row of rows) await this.media.assertUsable(clientId, JSON.parse(row.mediaUrls) as string[]);
+    const queued = await this.prisma.contentCheck.count({ where: { clientId, status: { in: ['PENDING', 'RUNNING'] } } });
+    if (queued + rows.length > MAX_QUEUED_PER_CLIENT) throw new BadRequestException('You have several checks running already. Wait for them to finish first.');
+    const created = await this.prisma.$transaction(rows.map((row) => this.prisma.contentCheck.create({ data: { ...row, userId, clientId, groupId } })));
     setImmediate(() => void this.drain());
     return created.map(serialize);
   }
@@ -105,8 +108,8 @@ export class PreflightService {
 
   // ---- read ----
 
-  async list(userId: string) {
-    const checks = await this.prisma.contentCheck.findMany({ where: { userId }, orderBy: { createdAt: 'desc' }, take: 50, select: WITHOUT_BRAIN });
+  async list(clientId: string) {
+    const checks = await this.prisma.contentCheck.findMany({ where: { clientId }, orderBy: { createdAt: 'desc' }, take: 50, select: WITHOUT_BRAIN });
     return checks.map((c) => {
       const { signals, report, ...rest } = serialize(c);
       // The list shows progress, so keep the stage while a check runs.
@@ -114,8 +117,8 @@ export class PreflightService {
     });
   }
 
-  async get(userId: string, id: string) {
-    const check = await this.prisma.contentCheck.findFirst({ where: { id, userId }, select: WITHOUT_BRAIN });
+  async get(clientId: string, id: string) {
+    const check = await this.prisma.contentCheck.findFirst({ where: { id, clientId }, select: WITHOUT_BRAIN });
     if (!check) throw new NotFoundException('Check not found.');
     return serialize(check);
   }
@@ -123,8 +126,8 @@ export class PreflightService {
   // ---- brain view ----
 
   /** The stored per-second brain map (100 KB to a few MB), served apart from the check itself. */
-  async brain(userId: string, id: string) {
-    const check = await this.prisma.contentCheck.findFirst({ where: { id, userId }, select: { brain: true } });
+  async brain(clientId: string, id: string) {
+    const check = await this.prisma.contentCheck.findFirst({ where: { id, clientId }, select: { brain: true } });
     if (!check) throw new NotFoundException('Check not found.');
     const brain = parseJson<BrainMap | null>(check.brain, null);
     if (!brain) throw new NotFoundException('No brain view for this check yet.');
@@ -136,8 +139,8 @@ export class PreflightService {
    * Free when the simulation service still has the clip cached; otherwise needs allowFresh, because it
    * starts a new GPU run (10-16 minutes) that finishes in the background.
    */
-  async loadBrain(userId: string, id: string, allowFresh: boolean): Promise<{ status: 'READY' | 'NEEDS_RUN' | 'RUNNING' }> {
-    const check = await this.prisma.contentCheck.findFirst({ where: { id, userId }, select: { kind: true, status: true, mediaUrls: true, signals: true, brainStatus: true, brain: true } });
+  async loadBrain(clientId: string, id: string, allowFresh: boolean): Promise<{ status: 'READY' | 'NEEDS_RUN' | 'RUNNING' }> {
+    const check = await this.prisma.contentCheck.findFirst({ where: { id, clientId }, select: { kind: true, status: true, mediaUrls: true, signals: true, brainStatus: true, brain: true } });
     if (!check) throw new NotFoundException('Check not found.');
     if (check.brain) return { status: 'READY' };
     if (check.brainStatus === 'RUNNING') return { status: 'RUNNING' };
@@ -168,8 +171,8 @@ export class PreflightService {
   }
 
   /** Versions ranked by how well they open. Same-model relative comparisons are the most trustworthy use of the simulation. */
-  async group(userId: string, groupId: string) {
-    const checks = (await this.prisma.contentCheck.findMany({ where: { userId, groupId }, orderBy: { createdAt: 'asc' }, select: WITHOUT_BRAIN })).map(serialize);
+  async group(clientId: string, groupId: string) {
+    const checks = (await this.prisma.contentCheck.findMany({ where: { clientId, groupId }, orderBy: { createdAt: 'asc' }, select: WITHOUT_BRAIN })).map(serialize);
     if (!checks.length) throw new NotFoundException('Comparison not found.');
     const done = checks.every((c) => c.status === 'DONE' || c.status === 'FAILED');
     const scored = checks.filter((c) => c.status === 'DONE');
@@ -179,15 +182,15 @@ export class PreflightService {
     return { groupId, done, rankedBy: bySimulation ? 'AUDIENCE_SIMULATION' : 'AI_REVIEW', ranking, checks };
   }
 
-  async remove(userId: string, id: string) {
-    await this.prisma.contentCheck.deleteMany({ where: { id, userId } });
+  async remove(clientId: string, id: string) {
+    await this.prisma.contentCheck.deleteMany({ where: { id, clientId } });
   }
 
-  async retry(userId: string, id: string) {
-    const { count } = await this.prisma.contentCheck.updateMany({ where: { id, userId, status: 'FAILED' }, data: { status: 'PENDING', error: null, attempts: 0 } });
+  async retry(clientId: string, id: string) {
+    const { count } = await this.prisma.contentCheck.updateMany({ where: { id, clientId, status: 'FAILED' }, data: { status: 'PENDING', error: null, attempts: 0 } });
     if (!count) throw new NotFoundException('No failed check to retry.');
     setImmediate(() => void this.drain());
-    return this.get(userId, id);
+    return this.get(clientId, id);
   }
 
   // ---- background job ----
@@ -262,7 +265,7 @@ export class PreflightService {
       }
 
       await this.setStage(id, 'WRITING');
-      const [brand, history] = await Promise.all([this.brand(check.userId), this.history(check.userId)]);
+      const [brand, history] = await Promise.all([this.brand(check.clientId), this.history(check.clientId)]);
       const report = await this.ai.reviewContent({
         kind: check.kind as Kind,
         platform: check.platform,
@@ -301,15 +304,17 @@ export class PreflightService {
     await this.prisma.contentCheck.update({ where: { id }, data: { signals: JSON.stringify({ stage }) } }).catch(() => undefined);
   }
 
-  private async brand(userId: string) {
-    const profile = await this.prisma.brandProfile.findUnique({ where: { userId } });
+  private async brand(clientId: string | null) {
+    if (!clientId) return null;
+    const profile = await this.prisma.brandProfile.findUnique({ where: { clientId } });
     return profile ? { niche: profile.niche, audience: profile.audience, voice: profile.voice, pillars: parseJson<string[]>(profile.pillars, []) } : null;
   }
 
-  /** The creator's own best and worst recent posts, so advice can lean on what works for this audience. */
-  private async history(userId: string): Promise<string | null> {
+  /** The client's own best and worst recent posts, so advice can lean on what works for this audience. */
+  private async history(clientId: string | null): Promise<string | null> {
+    if (!clientId) return null;
     const rows = await this.prisma.postInsight.findMany({
-      where: { account: { userId }, views: { not: null } },
+      where: { account: { clientId }, views: { not: null } },
       orderBy: { fetchedAt: 'desc' },
       take: 60,
       select: { views: true, likes: true, shares: true, saves: true, post: { select: { mediaType: true, caption: true, platform: true } } },

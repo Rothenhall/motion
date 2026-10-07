@@ -31,10 +31,15 @@ import { HooksController } from './ai/hooks.controller';
 import { PreflightController } from './preflight/preflight.controller';
 import { PreflightService } from './preflight/preflight.service';
 import { TribeClient } from './preflight/tribe.client';
+import { FeaturesService } from './tenancy/features.service';
+import { ClientsService } from './tenancy/clients.service';
+import { TenancyBackfillService } from './tenancy/backfill.service';
+import { MediaOwnershipService } from './tenancy/media-ownership.service';
+import { FeatureGuard, RolesGuard } from './tenancy/guards';
 
 @Module({
   imports: [ConfigModule.forRoot({ isGlobal: true }), ScheduleModule.forRoot(), ThrottlerModule.forRoot(throttlerOptions)],
   controllers: [UsersController, AuthController, PostsController, DraftsController, AccountsController, AutomationsController, CommentsController, WebhooksController, DashboardController, MediaController, AnalyticsController, IdeasController, HooksController, PreflightController],
-  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }, { provide: APP_GUARD, useClass: AuthGuard }, PrismaService, SchedulerService, UploadsCleanupService, PublishersService, AutomationsService, MetaService, InsightsService, AiService, IdeasService, HooksService, TribeClient, PreflightService],
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }, { provide: APP_GUARD, useClass: AuthGuard }, { provide: APP_GUARD, useClass: RolesGuard }, { provide: APP_GUARD, useClass: FeatureGuard }, PrismaService, SchedulerService, UploadsCleanupService, PublishersService, AutomationsService, MetaService, InsightsService, AiService, IdeasService, HooksService, TribeClient, PreflightService, FeaturesService, ClientsService, TenancyBackfillService, MediaOwnershipService],
 })
 export class AppModule {}

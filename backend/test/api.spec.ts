@@ -97,7 +97,9 @@ describe('API security', () => {
   describe('user accounts', () => {
     it('logs in with the right password only', async () => {
       const ok = await http().post('/auth/login').send({ email: 'ALICE@example.com', password: 'password123' }).expect(200);
-      await http().get('/auth/me').set('Authorization', `Bearer ${ok.body.token}`).expect(200, { id: ok.body.user.id, email: 'alice@example.com' });
+      const me = await http().get('/auth/me').set('Authorization', `Bearer ${ok.body.token}`).expect(200);
+      expect(me.body).toMatchObject({ id: ok.body.user.id, email: 'alice@example.com', role: 'ADMIN', canActAs: true, acting: false });
+      expect(me.body.client).toMatchObject({ status: 'ACTIVE' });
       await http().post('/auth/login').send({ email: 'alice@example.com', password: 'nope-nope' }).expect(401);
       await http().post('/auth/login').send({ email: 'nobody@example.com', password: 'password123' }).expect(401);
     });
@@ -185,8 +187,8 @@ describe('API security', () => {
     });
 
     it('hides and protects another user\'s ideas', async () => {
-      const bobUser = (await http().get('/auth/me').set(auth(bob)).expect(200)).body.id;
-      const idea = await prisma.contentIdea.create({ data: { userId: bobUser, title: 'Bob idea', hook: 'h', format: 'REEL', platform: 'instagram' } });
+      const bobUser = await prisma.user.findUniqueOrThrow({ where: { email: 'bob@example.com' } });
+      const idea = await prisma.contentIdea.create({ data: { userId: bobUser.id, clientId: bobUser.clientId, title: 'Bob idea', hook: 'h', format: 'REEL', platform: 'instagram' } });
       expect((await http().get('/ideas').set(auth(bob)).expect(200)).body.map((i: any) => i.id)).toEqual([idea.id]);
       expect((await http().get('/ideas').set(auth(alice)).expect(200)).body).toEqual([]);
       await http().patch(`/ideas/${idea.id}`).set(auth(alice)).send({ status: 'SAVED' }).expect(404);
@@ -398,7 +400,7 @@ describe('API security', () => {
 
       const carol = await register('carol@example.com');
       const user = await prisma.user.findUniqueOrThrow({ where: { email: 'carol@example.com' } });
-      await prisma.postDraft.createMany({ data: Array.from({ length: 100 }, (_, i) => ({ userId: user.id, caption: `d${i}` })) });
+      await prisma.postDraft.createMany({ data: Array.from({ length: 100 }, (_, i) => ({ userId: user.id, clientId: user.clientId, caption: `d${i}` })) });
       expect((await http().post('/drafts').set(auth(carol)).send({ caption: 'one too many' }).expect(400)).body.message).toContain('100 drafts');
       await http().patch(`/drafts/${(await prisma.postDraft.findFirstOrThrow({ where: { userId: user.id } })).id}`).set(auth(carol)).send({ caption: 'still editable' }).expect(200);
     });
@@ -512,7 +514,7 @@ describe('API security', () => {
     describe('linking a post to its idea', () => {
       it('marks the idea used and returns it with the post', async () => {
         const bobUser = await prisma.user.findUniqueOrThrow({ where: { email: 'bob@example.com' } });
-        const idea = await prisma.contentIdea.create({ data: { userId: bobUser.id, title: 'Linked idea', hook: 'A hook', format: 'IMAGE', platform: 'instagram' } });
+        const idea = await prisma.contentIdea.create({ data: { userId: bobUser.id, clientId: bobUser.clientId, title: 'Linked idea', hook: 'A hook', format: 'IMAGE', platform: 'instagram' } });
         const account = (await http().get('/accounts').set('Authorization', `Bearer ${bob}`).expect(200)).body.find((a: any) => a.provider === 'instagram').id;
         const res = await http().post('/posts').set('Authorization', `Bearer ${bob}`)
           .send({ accountId: account, platform: 'instagram', mediaUrls: ['https://cdn.example.com/a.jpg'], scheduledAt: new Date(Date.now() + 3_600_000).toISOString(), ideaId: idea.id }).expect(201);
@@ -523,7 +525,7 @@ describe('API security', () => {
 
       it('ignores an idea that belongs to someone else', async () => {
         const bobUser = await prisma.user.findUniqueOrThrow({ where: { email: 'bob@example.com' } });
-        const theirs = await prisma.contentIdea.create({ data: { userId: bobUser.id, title: 'Bob only', hook: 'h', format: 'IMAGE', platform: 'instagram' } });
+        const theirs = await prisma.contentIdea.create({ data: { userId: bobUser.id, clientId: bobUser.clientId, title: 'Bob only', hook: 'h', format: 'IMAGE', platform: 'instagram' } });
         const account = (await http().get('/accounts').set('Authorization', `Bearer ${alice}`).expect(200)).body.find((a: any) => a.provider === 'instagram');
         if (!account) return; // alice has no Instagram channel in this suite
         const res = await http().post('/posts').set('Authorization', `Bearer ${alice}`)

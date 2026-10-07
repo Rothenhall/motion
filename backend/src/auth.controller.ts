@@ -2,7 +2,10 @@ import { BadRequestException, Body, Controller, Get, Param, Post, Query, Res } f
 import axios from 'axios';
 import { MetaService } from './meta.service';
 import { InsightsService } from './insights.service';
-import { AuthUser, CurrentUser, Public } from './auth/auth.guard';
+import { Public } from './auth/auth.guard';
+import { PrismaService } from './prisma.service';
+import { Ctx, RequestContext, requireClient } from './tenancy/ctx';
+import { ChannelOwner } from './meta.service';
 import { signToken, verifyToken } from './auth/crypto';
 import { graphVersion } from './meta-config';
 
@@ -29,7 +32,7 @@ const THREADS_SCOPES = ['threads_basic','threads_content_publish','threads_manag
 
 @Controller('auth')
 export class AuthController {
-  constructor(private meta: MetaService, private insights: InsightsService) {}
+  constructor(private meta: MetaService, private insights: InsightsService, private prisma: PrismaService) {}
 
   private redirectFor(kind: string) {
     const map: any = {
@@ -46,9 +49,10 @@ export class AuthController {
    * workspace to attach the channel to and rejects forged or replayed callbacks.
    */
   @Get(':provider/start')
-  start(@CurrentUser() user: AuthUser, @Param('provider') provider: string) {
+  start(@Ctx() ctx: RequestContext, @Param('provider') provider: string) {
     if (!['facebook', 'instagram', 'threads'].includes(provider)) throw new BadRequestException('Choose Facebook, Instagram or Threads.');
-    const state = signToken(user.id, 'oauth_state', OAUTH_STATE_TTL, { provider });
+    // The state names the user and the client the channel will belong to, so the public callback needs no session.
+    const state = signToken(ctx.user.id, 'oauth_state', OAUTH_STATE_TTL, { provider, clientId: requireClient(ctx) });
     const v = graphVersion();
     if (provider === 'threads') {
       // Threads OAuth runs on threads.net with the Threads app ID, not the Facebook dialog.
@@ -93,16 +97,20 @@ export class AuthController {
     };
   }
 
-  private stateUser(state: string | undefined, provider: string): string | null {
+  private async stateOwner(state: string | undefined, provider: string): Promise<ChannelOwner | null> {
     const payload = state ? verifyToken(state, 'oauth_state') : null;
-    return payload && payload.provider === provider ? payload.sub : null;
+    if (!payload || payload.provider !== provider) return null;
+    // Links started before clients existed carry no client: use the user's own workspace.
+    let clientId = typeof payload.clientId === 'string' ? payload.clientId : null;
+    if (!clientId) clientId = (await this.prisma.user.findUnique({ where: { id: payload.sub }, select: { clientId: true } }))?.clientId ?? null;
+    return clientId ? { userId: payload.sub, clientId } : null;
   }
 
   // OAuth callbacks auto-connect: exchange -> long-lived token -> profile ->
   // stored account -> recent history import. The user just lands back connected.
-  private done(res: any, provider: string, label: string) {
-    // Pull first insights in the background so Analytics has data by the time they look.
-    this.insights.syncAll().catch(() => undefined);
+  private done(res: any, provider: string, label: string, clientId: string) {
+    // Pull first insights for this client's channels in the background so Analytics has data by the time they look.
+    this.insights.syncClient(clientId).catch(() => undefined);
     return res.redirect(`${process.env.FRONTEND_URL}/connect?connected=${provider}&account=${encodeURIComponent(label)}`);
   }
 
@@ -114,12 +122,12 @@ export class AuthController {
   @Get('facebook/callback')
   async fbCb(@Query('code') code: string, @Query('state') state: string, @Res() res: any) {
     if (!code) return this.fail(res, new Error('Facebook authorization was cancelled.'));
-    const userId = this.stateUser(state, 'facebook');
-    if (!userId) return this.fail(res, new Error(EXPIRED));
+    const owner = await this.stateOwner(state, 'facebook');
+    if (!owner) return this.fail(res, new Error(EXPIRED));
     try {
-      const r = await this.meta.connectFacebook(code, userId);
+      const r = await this.meta.connectFacebook(code, owner);
       const label = r.count > 1 ? `${r.count} Pages` : r.name;
-      return this.done(res, 'facebook', label);
+      return this.done(res, 'facebook', label, owner.clientId);
     } catch (e) {
       return this.fail(res, e);
     }
@@ -128,11 +136,11 @@ export class AuthController {
   @Get('instagram/callback')
   async igCb(@Query('code') code: string, @Query('state') state: string, @Res() res: any) {
     if (!code) return this.fail(res, new Error('Instagram authorization was cancelled.'));
-    const userId = this.stateUser(state, 'instagram');
-    if (!userId) return this.fail(res, new Error(EXPIRED));
+    const owner = await this.stateOwner(state, 'instagram');
+    if (!owner) return this.fail(res, new Error(EXPIRED));
     try {
-      const r = await this.meta.connectInstagram(code, userId);
-      return this.done(res, 'instagram', r.name);
+      const r = await this.meta.connectInstagram(code, owner);
+      return this.done(res, 'instagram', r.name, owner.clientId);
     } catch (e) {
       return this.fail(res, e);
     }
@@ -141,11 +149,11 @@ export class AuthController {
   @Get('threads/callback')
   async thCb(@Query('code') code: string, @Query('state') state: string, @Res() res: any) {
     if (!code) return this.fail(res, new Error('Threads authorization was cancelled.'));
-    const userId = this.stateUser(state, 'threads');
-    if (!userId) return this.fail(res, new Error(EXPIRED));
+    const owner = await this.stateOwner(state, 'threads');
+    if (!owner) return this.fail(res, new Error(EXPIRED));
     try {
-      const r = await this.meta.connectThreads(code, userId);
-      return this.done(res, 'threads', r.name);
+      const r = await this.meta.connectThreads(code, owner);
+      return this.done(res, 'threads', r.name, owner.clientId);
     } catch (e) {
       return this.fail(res, e);
     }

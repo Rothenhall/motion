@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma.service';
 import { BrandContext, AiService, PLATFORMS } from './ai.service';
+import { FeaturesService } from '../tenancy/features.service';
 
 export type ProfileInput = { niche?: string; audience?: string; voice?: string; pillars?: unknown; platforms?: unknown; autopilot?: boolean; ideasPerRun?: number };
 
@@ -23,16 +24,16 @@ function cleanList(value: unknown, field: string): string[] {
 export class IdeasService {
   private readonly log = new Logger(IdeasService.name);
 
-  constructor(private prisma: PrismaService, private ai: AiService) {}
+  constructor(private prisma: PrismaService, private ai: AiService, private features: FeaturesService) {}
 
-  // ---- brand profile (one per user) ----
+  // ---- brand profile (one per client) ----
 
-  async getProfile(userId: string) {
-    const profile = await this.prisma.brandProfile.findUnique({ where: { userId } });
+  async getProfile(clientId: string) {
+    const profile = await this.prisma.brandProfile.findUnique({ where: { clientId } });
     return profile ? serializeProfile(profile) : null;
   }
 
-  async saveProfile(userId: string, body: ProfileInput) {
+  async saveProfile(clientId: string, userId: string, body: ProfileInput) {
     const niche = body.niche?.trim();
     if (!niche) throw new BadRequestException('Describe what your brand posts about.');
     const platforms = cleanList(body.platforms, 'Platforms');
@@ -48,23 +49,23 @@ export class IdeasService {
       autopilot: Boolean(body.autopilot),
       ideasPerRun,
     };
-    const saved = await this.prisma.brandProfile.upsert({ where: { userId }, update: data, create: { userId, ...data } });
+    const saved = await this.prisma.brandProfile.upsert({ where: { clientId }, update: { ...data, userId }, create: { clientId, userId, ...data } });
     return serializeProfile(saved);
   }
 
   // ---- ideas ----
 
-  async list(userId: string, status?: string) {
+  async list(clientId: string, status?: string) {
     const ideas = await this.prisma.contentIdea.findMany({
-      where: { userId, ...(status ? { status } : { status: { not: 'DISMISSED' } }) },
+      where: { clientId, ...(status ? { status } : { status: { not: 'DISMISSED' } }) },
       orderBy: { createdAt: 'desc' },
       take: 200,
     });
     return ideas.map(serializeIdea);
   }
 
-  async generate(userId: string, opts: { topic?: string; platform?: string; count?: number; source?: 'MANUAL' | 'AUTOPILOT' }) {
-    const profile = await this.getProfile(userId);
+  async generate(clientId: string, userId: string, opts: { topic?: string; platform?: string; count?: number; source?: 'MANUAL' | 'AUTOPILOT' }) {
+    const profile = await this.getProfile(clientId);
     if (!profile) throw new BadRequestException('Set up your brand profile first so ideas fit your niche.');
     const count = opts.count ?? 5;
     if (!Number.isInteger(count) || count < 1 || count > MAX_IDEAS) throw new BadRequestException(`Ask for between 1 and ${MAX_IDEAS} ideas.`);
@@ -72,8 +73,8 @@ export class IdeasService {
     const topic = opts.topic?.trim().slice(0, 300) || undefined;
 
     const [recent, favorites] = await Promise.all([
-      this.prisma.contentIdea.findMany({ where: { userId }, orderBy: { createdAt: 'desc' }, take: 30, select: { title: true } }),
-      this.prisma.hook.findMany({ where: { userId, isFavorite: true }, orderBy: { usedCount: 'desc' }, take: 8, select: { text: true } }),
+      this.prisma.contentIdea.findMany({ where: { clientId }, orderBy: { createdAt: 'desc' }, take: 30, select: { title: true } }),
+      this.prisma.hook.findMany({ where: { clientId, isFavorite: true }, orderBy: { usedCount: 'desc' }, take: 8, select: { text: true } }),
     ]);
     const brand: BrandContext = { niche: profile.niche, audience: profile.audience, voice: profile.voice, pillars: profile.pillars };
     const ideas = await this.ai.generateIdeas({
@@ -89,6 +90,7 @@ export class IdeasService {
     const created = await this.prisma.$transaction(ideas.map((idea) => this.prisma.contentIdea.create({
       data: {
         userId,
+        clientId,
         title: idea.title.trim(),
         hook: idea.hook.trim(),
         angle: idea.angle.trim() || null,
@@ -104,15 +106,15 @@ export class IdeasService {
     return created.map(serializeIdea);
   }
 
-  async setStatus(userId: string, id: string, status?: string) {
+  async setStatus(clientId: string, id: string, status?: string) {
     if (!status || !['NEW', 'SAVED', 'USED', 'DISMISSED'].includes(status)) throw new BadRequestException('Choose a supported status.');
-    const idea = await this.prisma.contentIdea.findFirst({ where: { id, userId }, select: { id: true } });
+    const idea = await this.prisma.contentIdea.findFirst({ where: { id, clientId }, select: { id: true } });
     if (!idea) throw new NotFoundException('Idea not found.');
     return serializeIdea(await this.prisma.contentIdea.update({ where: { id }, data: { status } }));
   }
 
-  async remove(userId: string, id: string) {
-    await this.prisma.contentIdea.deleteMany({ where: { id, userId } });
+  async remove(clientId: string, id: string) {
+    await this.prisma.contentIdea.deleteMany({ where: { id, clientId } });
   }
 
   // ---- autopilot ----
@@ -120,15 +122,19 @@ export class IdeasService {
   @Cron(CronExpression.EVERY_DAY_AT_7AM)
   async autopilot() {
     if (!this.ai.configured) return;
-    const profiles = await this.prisma.brandProfile.findMany({ where: { autopilot: true }, orderBy: { createdAt: 'asc' } });
+    // Only active clients (not suspended) that have AI and Content Lab switched on. Profiles not yet moved into a client wait for the backfill.
+    const profiles = await this.prisma.brandProfile.findMany({ where: { autopilot: true, clientId: { not: null }, client: { status: 'ACTIVE' } }, orderBy: { createdAt: 'asc' } });
     for (const profile of profiles) {
+      const clientId = profile.clientId as string;
+      const switches = await this.features.forClient(clientId);
+      if (!switches.ai || !switches['content-lab']) continue;
       if (profile.lastAutopilotAt && Date.now() - profile.lastAutopilotAt.getTime() < AUTOPILOT_GAP_MS) continue;
       await this.prisma.brandProfile.update({ where: { id: profile.id }, data: { lastAutopilotAt: new Date() } });
       try {
-        const ideas = await this.generate(profile.userId, { count: profile.ideasPerRun, source: 'AUTOPILOT' });
-        this.log.log(`Autopilot added ${ideas.length} ideas for user ${profile.userId}`);
+        const ideas = await this.generate(clientId, profile.userId, { count: profile.ideasPerRun, source: 'AUTOPILOT' });
+        this.log.log(`Autopilot added ${ideas.length} ideas for client ${clientId}`);
       } catch (error) {
-        this.log.error(`Autopilot failed for user ${profile.userId}: ${error instanceof Error ? error.message : error}`);
+        this.log.error(`Autopilot failed for client ${clientId}: ${error instanceof Error ? error.message : error}`);
       }
     }
   }

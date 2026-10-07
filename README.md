@@ -100,6 +100,25 @@ well they open.
 - All results are estimates and the UI says so. The TRIBE scores are not yet calibrated against real results.
   TRIBE v2 is CC BY-NC 4.0: internal R&D only, not for paying users without a license from Meta.
 
+## Clients and staff
+
+Motion is organised in **client workspaces**: one per brand, holding its channels, drafts, posts, ideas, hooks, brand voice,
+checks and analytics. Every user belongs to one workspace and only ever sees that one.
+
+- **Admins** are agency staff. The first account created on an empty database is an admin, and anyone listed in `ADMIN_EMAILS`
+  (comma separated, in `backend/.env`) is made one at the next start. An admin can act as any client by sending the header
+  `X-Client-Id: <client id>`; adding `X-Preview-Mode: view` makes that read only, so a preview can never change a client's data.
+  Clients themselves can never name another client (403), and another client's ids answer 404.
+- **Switches** decide what a client can use. Sections (planner, content-lab, preflight, inbox, automations, analytics) and actions
+  (compose, schedule, delete-posts, inbox-reply, edit-brand, ai) are on by default except `ai`, which costs money and starts off for a
+  client an admin creates. A switched-off feature answers 403 with `code: FEATURE_DISABLED`. Admins are never blocked by switches.
+- **Suspending** a client stops its users signing in at once, pauses publishing and automations, and keeps analytics syncing.
+- **Existing installs.** The migration adds workspaces without promoting anyone; on the next start every existing user gets a
+  workspace of their own (their channels, drafts, ideas, hooks, brand voice and checks move into it) and, if you set `ADMIN_EMAILS`,
+  your staff become admins. Back up the database first. `ALLOW_SIGNUP=false` closes open sign-up.
+
+See `docs/admin-client-plan.md` for the full design and what is still to come (admin console, invites, preview bar).
+
 ## Security
 
 - Every API route needs a signed-in Motion user (`Authorization: Bearer <token>` from `POST /auth/register` or `POST /auth/login`). Only sign-up/sign-in, the Meta OAuth callbacks, the webhook endpoint and `/media/*` files are public.

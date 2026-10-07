@@ -16,7 +16,8 @@ export class SchedulerService {
   @Cron('*/1 * * * *')
   async tick() {
     const due = await this.prisma.scheduledPost.findMany({
-      where: { status: 'SCHEDULED', scheduledAt: { lte: new Date() } },
+      // A suspended client's posts wait where they are; they are picked up again when the client is reactivated.
+      where: { status: 'SCHEDULED', scheduledAt: { lte: new Date() }, account: { NOT: { client: { status: 'SUSPENDED' } } } },
       select: { id: true },
       orderBy: { scheduledAt: 'asc' },
       take: 10,

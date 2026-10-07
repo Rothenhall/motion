@@ -1,22 +1,24 @@
 import { BadRequestException, Body, Controller, Delete, Get, NotFoundException, Param, Patch, Post } from '@nestjs/common';
 import { PrismaService } from './prisma.service';
-import { AuthUser, CurrentUser } from './auth/auth.guard';
+import { Ctx, RequestContext, accountScope, clientScope } from './tenancy/ctx';
+import { RequireFeature } from './tenancy/guards';
 
 const TRIGGERS = ['COMMENT_KEYWORD', 'ALL_COMMENTS'];
 const REPLY_MODES = ['PUBLIC', 'DM', 'PUBLIC_AND_DM'];
 const accountSelect = { id: true, provider: true, externalId: true, name: true, tokenExpires: true, createdAt: true } as const;
 
 @Controller('automations')
+@RequireFeature('automations')
 export class AutomationsController {
   constructor(private prisma: PrismaService) {}
 
   @Get()
-  list(@CurrentUser() user: AuthUser) {
-    return this.prisma.automationRule.findMany({ where: { account: { userId: user.id } }, orderBy: { createdAt: 'desc' }, include: { account: { select: accountSelect } } });
+  list(@Ctx() ctx: RequestContext) {
+    return this.prisma.automationRule.findMany({ where: accountScope(ctx), orderBy: { createdAt: 'desc' }, include: { account: { select: accountSelect } } });
   }
 
   @Post()
-  async create(@CurrentUser() user: AuthUser, @Body() body: { accountId?: string; name?: string; trigger?: string; keyword?: string; replyMode?: string; publicReply?: string; dmText?: string }) {
+  async create(@Ctx() ctx: RequestContext, @Body() body: { accountId?: string; name?: string; trigger?: string; keyword?: string; replyMode?: string; publicReply?: string; dmText?: string }) {
     const accountId = body.accountId?.trim();
     const name = body.name?.trim();
     const trigger = body.trigger || 'COMMENT_KEYWORD';
@@ -25,7 +27,7 @@ export class AutomationsController {
     if (!TRIGGERS.includes(trigger)) throw new BadRequestException('Choose a supported trigger.');
     if (!REPLY_MODES.includes(replyMode)) throw new BadRequestException('Choose a supported reply mode.');
     if (trigger === 'COMMENT_KEYWORD' && !body.keyword?.trim()) throw new BadRequestException('Add a keyword for this trigger.');
-    const account = await this.prisma.socialAccount.findFirst({ where: { id: accountId, userId: user.id }, select: { id: true } });
+    const account = await this.prisma.socialAccount.findFirst({ where: { id: accountId, ...clientScope(ctx) }, select: { id: true } });
     if (!account) throw new BadRequestException('That account is no longer connected.');
 
     return this.prisma.automationRule.create({
@@ -43,15 +45,15 @@ export class AutomationsController {
   }
 
   @Patch(':id/toggle')
-  async toggle(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    const rule = await this.prisma.automationRule.findFirst({ where: { id, account: { userId: user.id } }, select: { isActive: true } });
+  async toggle(@Ctx() ctx: RequestContext, @Param('id') id: string) {
+    const rule = await this.prisma.automationRule.findFirst({ where: { id, ...accountScope(ctx) }, select: { isActive: true } });
     if (!rule) throw new NotFoundException('Automation not found.');
     return this.prisma.automationRule.update({ where: { id }, data: { isActive: !rule.isActive }, include: { account: { select: accountSelect } } });
   }
 
   @Delete(':id')
-  async remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    const rule = await this.prisma.automationRule.findFirst({ where: { id, account: { userId: user.id } }, select: { id: true } });
+  async remove(@Ctx() ctx: RequestContext, @Param('id') id: string) {
+    const rule = await this.prisma.automationRule.findFirst({ where: { id, ...accountScope(ctx) }, select: { id: true } });
     if (!rule) throw new NotFoundException('Automation not found.');
     return this.prisma.automationRule.delete({ where: { id } });
   }

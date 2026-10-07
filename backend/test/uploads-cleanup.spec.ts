@@ -22,11 +22,12 @@ describe('Upload cleanup', () => {
 
   beforeAll(async () => {
     await prisma.$connect();
-    const user = await prisma.user.create({ data: { email: 'cleanup@example.com', passwordHash: 'x' } });
-    const account = await prisma.socialAccount.create({ data: { userId: user.id, provider: 'instagram', externalId: 'cleanup-ig', accessToken: 'x' } });
+    const client = await prisma.client.create({ data: { name: 'Cleanup test client' } });
+    const user = await prisma.user.create({ data: { email: 'cleanup@example.com', passwordHash: 'x', clientId: client.id } });
+    const account = await prisma.socialAccount.create({ data: { userId: user.id, clientId: client.id, provider: 'instagram', externalId: 'cleanup-ig', accessToken: 'x' } });
     await prisma.scheduledPost.create({ data: { accountId: account.id, platform: 'instagram', mediaType: 'IMAGE', mediaUrls: JSON.stringify([url('1000-aaaaaaaa.jpg')]), scheduledAt: new Date(), status: 'PUBLISHED' } });
-    await prisma.postDraft.create({ data: { userId: user.id, mediaUrls: JSON.stringify([url('1000-bbbbbbbb.png', 'http://localhost:3001')]) } });
-    await prisma.contentCheck.create({ data: { userId: user.id, kind: 'VIDEO', platform: 'instagram', mediaUrls: JSON.stringify([url('1000-cccccccc.mp4')]) } });
+    await prisma.postDraft.create({ data: { userId: user.id, clientId: client.id, mediaUrls: JSON.stringify([url('1000-bbbbbbbb.png', 'http://localhost:3001')]) } });
+    await prisma.contentCheck.create({ data: { userId: user.id, clientId: client.id, kind: 'VIDEO', platform: 'instagram', mediaUrls: JSON.stringify([url('1000-cccccccc.mp4')]) } });
   });
 
   beforeEach(() => {
@@ -45,6 +46,7 @@ describe('Upload cleanup', () => {
       await prisma.scheduledPost.deleteMany({ where: { account: { userId: user.id } } });
       await prisma.socialAccount.deleteMany({ where: { userId: user.id } });
       await prisma.user.delete({ where: { id: user.id } });
+      if (user.clientId) await prisma.client.delete({ where: { id: user.clientId } });
     }
     await prisma.$disconnect();
   });

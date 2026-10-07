@@ -13,6 +13,9 @@ const DAY = 86_400_000;
  * Callers never touch tokens directly — one click in, connected account out.
  * Tokens are stored encrypted; decrypt with decryptToken() right before use.
  */
+/** Who a connected channel belongs to: the client workspace, and the user who connected it. */
+export type ChannelOwner = { userId: string; clientId: string };
+
 @Injectable()
 export class MetaService implements OnModuleInit {
   private readonly log = new Logger(MetaService.name);
@@ -35,7 +38,7 @@ export class MetaService implements OnModuleInit {
 
   // ---------- Instagram (Business Login) ----------
 
-  async connectInstagram(code: string, userId: string): Promise<{ name: string; imported: number }> {
+  async connectInstagram(code: string, owner: ChannelOwner): Promise<{ name: string; imported: number }> {
     const clientId = process.env.META_IG_APP_ID || process.env.META_APP_ID!;
     const clientSecret = process.env.META_IG_APP_SECRET || process.env.META_APP_SECRET!;
     const redirect = process.env.META_IG_REDIRECT_URL!;
@@ -66,7 +69,7 @@ export class MetaService implements OnModuleInit {
       params: { fields: 'user_id,username,account_type,media_count', access_token: token },
     });
     const externalId = String(me.data.user_id ?? me.data.id);
-    const account = await this.upsert(userId, 'instagram', externalId, me.data.username ? `@${me.data.username}` : null, token, expiresAt, {
+    const account = await this.upsert(owner, 'instagram', externalId, me.data.username ? `@${me.data.username}` : null, token, expiresAt, {
       username: me.data.username,
       accountType: me.data.account_type,
       mediaCount: me.data.media_count,
@@ -115,7 +118,7 @@ export class MetaService implements OnModuleInit {
 
   // ---------- Facebook Pages ----------
 
-  async connectFacebook(code: string, userId: string): Promise<{ name: string; count: number }> {
+  async connectFacebook(code: string, owner: ChannelOwner): Promise<{ name: string; count: number }> {
     const redirect = process.env.META_FB_REDIRECT_URL!;
     const longToken = await this.longLivedUserToken(code, redirect);
     const pages = await axios.get(`https://graph.facebook.com/${this.v()}/me/accounts`, {
@@ -127,7 +130,7 @@ export class MetaService implements OnModuleInit {
     }
     for (const page of list) {
       // Page tokens don't expire once the user token is long-lived.
-      await this.upsert(userId, 'facebook_page', String(page.id), page.name, page.access_token, null, { via: 'auto' });
+      await this.upsert(owner, 'facebook_page', String(page.id), page.name, page.access_token, null, { via: 'auto' });
       await this.subscribePage(String(page.id), page.access_token);
     }
     return { name: list[0].name, count: list.length };
@@ -224,13 +227,13 @@ export class MetaService implements OnModuleInit {
     };
   }
 
-  async connectThreads(code: string, userId: string): Promise<{ name: string; imported: number }> {
+  async connectThreads(code: string, owner: ChannelOwner): Promise<{ name: string; imported: number }> {
     const longToken = await this.threadsToken(code);
     const me = await axios.get('https://graph.threads.net/v1.0/me', {
       params: { fields: 'id,username', access_token: longToken.token },
     });
     const account = await this.upsert(
-      userId,
+      owner,
       'threads',
       String(me.data.id),
       me.data.username ? `@${me.data.username}` : null,
@@ -299,9 +302,9 @@ export class MetaService implements OnModuleInit {
     };
   }
 
-  /** Create-or-update by (user, provider, externalId). Safe to call twice for the same OAuth callback. */
+  /** Create-or-update by (client, provider, externalId). Safe to call twice for the same OAuth callback. */
   private async upsert(
-    userId: string,
+    owner: ChannelOwner,
     provider: string,
     externalId: string,
     name: string | null,
@@ -313,15 +316,15 @@ export class MetaService implements OnModuleInit {
     if (name) data.name = name;
     if (meta) data.meta = JSON.stringify(meta);
     try {
-      const existing = await this.prisma.socialAccount.findFirst({ where: { userId, provider, externalId } });
+      const existing = await this.prisma.socialAccount.findFirst({ where: { clientId: owner.clientId, provider, externalId } });
       if (existing) {
         return await this.prisma.socialAccount.update({ where: { id: existing.id }, data });
       }
-      return await this.prisma.socialAccount.create({ data: { userId, provider, externalId, ...data } });
+      return await this.prisma.socialAccount.create({ data: { userId: owner.userId, clientId: owner.clientId, provider, externalId, ...data } });
     } catch (e: any) {
-      // Lost a race with a parallel callback (unique user+provider+externalId) — return the winner.
+      // Lost a race with a parallel callback (unique client+provider+externalId) — return the winner.
       if (e?.code === 'P2002') {
-        const winner = await this.prisma.socialAccount.findFirst({ where: { userId, provider, externalId } });
+        const winner = await this.prisma.socialAccount.findFirst({ where: { clientId: owner.clientId, provider, externalId } });
         if (winner) return winner;
       }
       throw e;

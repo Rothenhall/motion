@@ -14,6 +14,9 @@ beforeEach(() => {
   delete process.env.META_GRAPH_VERSION;
 });
 
+/** Who a connected channel would belong to: the user who connected it and the client workspace. */
+const OWNER = { userId: 'user-1', clientId: 'client-1' };
+
 describe('PublishersService Graph calls', () => {
   const pub = new PublishersService({} as any);
   pub.sleep = jest.fn().mockResolvedValue(undefined);
@@ -122,7 +125,7 @@ describe('MetaService token and webhook calls', () => {
       if (url === 'https://graph.instagram.com/me') return { data: { user_id: '178', username: 'bob' } };
       return { data: { data: [] } };
     });
-    await meta.connectInstagram('code', 'user-1');
+    await meta.connectInstagram('code', OWNER);
     expect(ax.get).toHaveBeenCalledWith('https://graph.instagram.com/access_token', { params: { grant_type: 'ig_exchange_token', client_secret: 'ig-secret', access_token: 'short-ig' } });
     expect(ax.post).toHaveBeenCalledWith(`https://graph.instagram.com/${V}/me/subscribed_apps`, null, { params: { subscribed_fields: 'comments,messages', access_token: 'long-ig' } });
   });
@@ -134,7 +137,7 @@ describe('MetaService token and webhook calls', () => {
       return { data: {} };
     });
     ax.post.mockResolvedValue({ data: { success: true } });
-    await meta.connectFacebook('code', 'user-1');
+    await meta.connectFacebook('code', OWNER);
     expect(ax.post).toHaveBeenCalledWith(`https://graph.facebook.com/${V}/p1/subscribed_apps`, null, { params: { subscribed_fields: 'feed,messages', access_token: 'page-tok' } });
   });
 
@@ -144,7 +147,7 @@ describe('MetaService token and webhook calls', () => {
       return { data: { data: [{ id: 'p1', name: 'Page', access_token: 'page-tok' }] } };
     });
     ax.post.mockRejectedValue(Object.assign(new Error('nope'), { response: { data: { error: { message: 'missing pages_manage_metadata' } } } }));
-    await expect(meta.connectFacebook('code', 'user-1')).resolves.toEqual({ name: 'Page', count: 1 });
+    await expect(meta.connectFacebook('code', OWNER)).resolves.toEqual({ name: 'Page', count: 1 });
   });
 
   it('runs Threads login on graph.threads.net with the Threads app credentials', async () => {
@@ -154,7 +157,7 @@ describe('MetaService token and webhook calls', () => {
       if (url === 'https://graph.threads.net/v1.0/me') return { data: { id: '9', username: 'bob' } };
       return { data: { data: [] } };
     });
-    await meta.connectThreads('the-code', 'user-1');
+    await meta.connectThreads('the-code', OWNER);
     const [url, form] = ax.post.mock.calls[0] as [string, URLSearchParams];
     expect(url).toBe('https://graph.threads.net/oauth/access_token');
     expect(Object.fromEntries(form)).toEqual({

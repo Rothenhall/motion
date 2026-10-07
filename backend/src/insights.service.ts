@@ -48,6 +48,7 @@ function byName(data: any[] | undefined): Record<string, number | null> {
 export class InsightsService {
   private readonly log = new Logger(InsightsService.name);
   private running: Promise<void> | null = null;
+  private runningByClient = new Map<string, Promise<void>>();
 
   constructor(private prisma: PrismaService, private meta: MetaService) {}
 
@@ -71,8 +72,21 @@ export class InsightsService {
     return this.running;
   }
 
-  isSyncing() {
-    return this.running !== null;
+  /** Sync one client's channels. Concurrent callers for the same client share the in-flight run. */
+  syncClient(clientId: string): Promise<void> {
+    let run = this.runningByClient.get(clientId);
+    if (!run) {
+      run = (async () => {
+        const accounts = await this.prisma.socialAccount.findMany({ where: { clientId } });
+        for (const a of accounts) await this.syncAccount(a);
+      })().finally(() => this.runningByClient.delete(clientId));
+      this.runningByClient.set(clientId, run);
+    }
+    return run;
+  }
+
+  isSyncing(clientId?: string) {
+    return this.running !== null || (clientId ? this.runningByClient.has(clientId) : this.runningByClient.size > 0);
   }
 
   async syncAccount(stored: SocialAccount) {

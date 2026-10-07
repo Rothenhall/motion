@@ -1,9 +1,11 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Post } from '@nestjs/common';
-import { AuthUser, CurrentUser } from '../auth/auth.guard';
+import { Ctx, RequestContext, requireClient } from '../tenancy/ctx';
+import { RequireFeature } from '../tenancy/guards';
 import { CheckInput, PreflightService } from './preflight.service';
 
-/** Pre-flight check: how people will likely react to a post, before it goes out. */
+/** Pre-flight check: how people will likely react to a post, before it goes out. Limited to the acting client's checks. */
 @Controller('preflight')
+@RequireFeature('preflight')
 export class PreflightController {
   constructor(private preflight: PreflightService) {}
 
@@ -13,49 +15,54 @@ export class PreflightController {
   }
 
   @Get()
-  list(@CurrentUser() user: AuthUser) {
-    return this.preflight.list(user.id);
+  list(@Ctx() ctx: RequestContext) {
+    return this.preflight.list(requireClient(ctx));
   }
 
+  // Running a check uses the AI (and sometimes a GPU), which costs the agency money, so it needs the AI switch.
   @Post()
-  create(@CurrentUser() user: AuthUser, @Body() body: CheckInput) {
-    return this.preflight.create(user.id, body);
+  @RequireFeature('ai')
+  create(@Ctx() ctx: RequestContext, @Body() body: CheckInput) {
+    return this.preflight.create(requireClient(ctx), ctx.user.id, body);
   }
 
   @Post('compare')
-  compare(@CurrentUser() user: AuthUser, @Body() body: { platform?: string; caption?: string; variants?: unknown }) {
-    return this.preflight.compare(user.id, body);
+  @RequireFeature('ai')
+  compare(@Ctx() ctx: RequestContext, @Body() body: { platform?: string; caption?: string; variants?: unknown }) {
+    return this.preflight.compare(requireClient(ctx), ctx.user.id, body);
   }
 
   @Get('groups/:groupId')
-  group(@CurrentUser() user: AuthUser, @Param('groupId') groupId: string) {
-    return this.preflight.group(user.id, groupId);
+  group(@Ctx() ctx: RequestContext, @Param('groupId') groupId: string) {
+    return this.preflight.group(requireClient(ctx), groupId);
   }
 
   @Get(':id')
-  get(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.preflight.get(user.id, id);
+  get(@Ctx() ctx: RequestContext, @Param('id') id: string) {
+    return this.preflight.get(requireClient(ctx), id);
   }
 
   @Get(':id/brain')
-  brain(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.preflight.brain(user.id, id);
+  brain(@Ctx() ctx: RequestContext, @Param('id') id: string) {
+    return this.preflight.brain(requireClient(ctx), id);
   }
 
   /** Fill in the brain view for an older reel check: free from cache, or a new GPU run when allowFresh is true. */
   @Post(':id/brain')
-  loadBrain(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() body: { allowFresh?: boolean }) {
-    return this.preflight.loadBrain(user.id, id, body?.allowFresh === true);
+  @RequireFeature('ai')
+  loadBrain(@Ctx() ctx: RequestContext, @Param('id') id: string, @Body() body: { allowFresh?: boolean }) {
+    return this.preflight.loadBrain(requireClient(ctx), id, body?.allowFresh === true);
   }
 
   @Post(':id/retry')
-  retry(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.preflight.retry(user.id, id);
+  @RequireFeature('ai')
+  retry(@Ctx() ctx: RequestContext, @Param('id') id: string) {
+    return this.preflight.retry(requireClient(ctx), id);
   }
 
   @Delete(':id')
   @HttpCode(204)
-  remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.preflight.remove(user.id, id);
+  remove(@Ctx() ctx: RequestContext, @Param('id') id: string) {
+    return this.preflight.remove(requireClient(ctx), id);
   }
 }
