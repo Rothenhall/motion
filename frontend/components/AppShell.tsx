@@ -10,6 +10,7 @@ import NavIcon from './NavIcon';
 import PreflightAlerts from './PreflightAlerts';
 import PreviewBar from './PreviewBar';
 import { signOut } from '../lib/api';
+import { useApprovalCount } from '../lib/approvals';
 import { buildNav, isActive, pageTitle, type NavExtras, type NavGroup } from '../lib/nav';
 import { isStaff, useSession } from '../lib/session';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
@@ -121,12 +122,10 @@ function ShellMessage({ title, children }: { title: string; children: React.Reac
   );
 }
 
-// APPROVALS-BADGE: another stream supplies the number of posts waiting for approval (staff only). Replace the body with
-//   const approvalsPending = useApprovalsCount();
-//   return { approvalsPending };
-// The Approvals link in the Admin group then shows the count when it is above 0. Nothing else needs to change.
+/** Extra numbers for the menu: the count of posts waiting for approval, for staff only (it makes no request for anyone else). */
 function useNavExtras(): NavExtras {
-  return {};
+  const { pending } = useApprovalCount();
+  return { approvalsPending: pending };
 }
 
 export default function AppShell({ children }: { children: React.ReactNode }) {

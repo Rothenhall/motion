@@ -7,6 +7,7 @@ import { PrismaService } from './prisma.service';
 import { Ctx, RequestContext, requireClient } from './tenancy/ctx';
 import { ChannelOwner } from './meta.service';
 import { signToken, verifyToken } from './auth/crypto';
+import { frontendUrl } from './frontend-url';
 import { graphVersion } from './meta-config';
 import { AuditService } from './tenancy/audit.service';
 import { Roles } from './tenancy/guards';
@@ -118,7 +119,7 @@ export class AuthController {
     void this.audit.record(owner.userId, 'channel.connect', { clientId: owner.clientId, targetType: 'channel', meta: { provider, label } });
     // Pull first insights for this client's channels in the background so Analytics has data by the time they look.
     this.insights.syncClient(owner.clientId).catch(() => undefined);
-    return res.redirect(`${process.env.FRONTEND_URL}/admin/clients/${encodeURIComponent(owner.clientId)}?tab=channels&connected=${encodeURIComponent(provider)}&account=${encodeURIComponent(label)}`);
+    return res.redirect(`${frontendUrl()}/admin/clients/${encodeURIComponent(owner.clientId)}?tab=channels&connected=${encodeURIComponent(provider)}&account=${encodeURIComponent(label)}`);
   }
 
   /**
@@ -129,7 +130,7 @@ export class AuthController {
     const payload = state ? verifyToken(state, 'oauth_state') : null;
     const clientId = owner?.clientId ?? (typeof payload?.clientId === 'string' ? payload.clientId : null);
     const error = `error=${encodeURIComponent(this.meta.msg(err))}`;
-    const base = process.env.FRONTEND_URL;
+    const base = frontendUrl();
     return res.redirect(clientId ? `${base}/admin/clients/${encodeURIComponent(clientId)}?tab=channels&${error}` : `${base}/admin?${error}`);
   }
 

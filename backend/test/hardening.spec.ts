@@ -81,6 +81,10 @@ describe('Hardening', () => {
   });
 
   afterAll(async () => {
+    // The rate-limit test posts to /auth/register, which really creates this account while sign-up is open in tests.
+    const stray = await prisma.user.findMany({ where: { email: 'x@example.com' }, select: { id: true, clientId: true } });
+    made.users.push(...stray.map((u) => u.id));
+    made.clients.push(...stray.map((u) => u.clientId).filter((c): c is string => !!c));
     const clientIds = made.clients;
     await new Promise((r) => setTimeout(r, 300)); // let a background check that started finish before its rows go
     await prisma.socialAccount.deleteMany({ where: { OR: [{ clientId: { in: clientIds } }, { externalId: { in: made.externalIds } }] } });
@@ -419,7 +423,7 @@ describe('Hardening', () => {
       // A session token is not accepted as an OAuth state either: the callback sends the visitor away with an error and connects nothing.
       const before = await prisma.socialAccount.count({ where: { clientId: A.client.id } });
       const res = await http().get('/auth/instagram/callback').query({ code: 'x', state: good }).expect(302);
-      expect(res.headers.location).toContain('/connect?error=');
+      expect(res.headers.location).toContain('/admin?error=');
       expect(await prisma.socialAccount.count({ where: { clientId: A.client.id } })).toBe(before);
     });
 
