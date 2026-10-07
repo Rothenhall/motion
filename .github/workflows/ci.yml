@@ -37,6 +37,23 @@ jobs:
       - run: npm ci
       - run: npx prisma generate
       - run: npm run typecheck
+      # The production image runs the compiled output (and the demo seed script), so make sure it compiles.
+      - run: npm run build
+      # Fails when prisma/schema.prisma and the committed migrations disagree, for example a schema edit with no migration.
+      # It replays every migration into a scratch database (motion_shadow) and compares the result with the schema.
+      # The hand-written partial index SocialAccount_connected_channel_key does not show up as a difference, because Prisma
+      # does not read partial indexes; it is still created by the migration, and the tests cover the rule it enforces.
+      - name: Check migrations match the schema
+        env:
+          PGPASSWORD: motion
+          DATABASE_URL: postgresql://motion:motion@localhost:5432/motion_test?schema=public
+        run: |
+          psql -h localhost -U motion -d postgres -c 'create database motion_shadow'
+          npx prisma migrate diff \
+            --from-migrations prisma/migrations \
+            --to-schema-datamodel prisma/schema.prisma \
+            --shadow-database-url 'postgresql://motion:motion@localhost:5432/motion_shadow?schema=public' \
+            --exit-code
       - run: npm test
 
   frontend:
