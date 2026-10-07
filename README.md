@@ -125,7 +125,13 @@ checks and analytics. Every user belongs to one workspace and only ever sees tha
 
 See `docs/admin-client-plan.md` for the full design. Day-to-day running (deploying, onboarding a client, backups, error codes) is in `docs/runbook.md`.
 
-**Admin console pages.** _To be filled in: the pages under `/admin` (overview, clients, and a client's Channels, Features, Team, Approvals and Activity tabs) and the preview bar._
+**The admin console** (staff only, under `/admin`; signing in as staff lands there):
+
+- **Overview** shows what needs a person's attention across every client: failed posts, disconnected channels, invites nobody has accepted, posts waiting for approval.
+- **Clients** lists every workspace with its status, channels, seats and counts. **New client** takes a name and the main contact's email and shows an invite link to copy. No email is sent: you pass the link on.
+- **A client's page** has tabs for Overview, Channels (connect, disconnect, reconnect), Features (the switches, and *Require approval*), Team (seats, invites, resets, disable), Approvals and Activity (the audit log). Staff connect channels here; clients only see what is connected.
+- **Preview as client** opens the normal app as that client, with a bar at the top. *View as client* is read only and shows exactly what the client sees, so a preview can never change their data. *Admin controls* can make changes. Starting and ending a preview is written to the audit log.
+- **Approvals** (`/admin/approvals`) is the queue of posts from clients who need approval. Approve to schedule (a post whose time has passed needs a new time), or request changes with a note; the client edits and resubmits.
 
 ## Security
 
