@@ -20,6 +20,8 @@
 /* Everything that sticks to the top sits below the preview bar (its height is set by PreviewBar). */
 .app-shell { min-height: calc(100vh - var(--preview-h, 0px)); }
 .sidebar { top: var(--preview-h, 0px); height: calc(100vh - var(--preview-h, 0px)); min-height: 0; overflow-y: auto; }
+.sidebar { scrollbar-width: none; }
+.sidebar::-webkit-scrollbar { display: none; }
 .topbar { top: var(--preview-h, 0px); }
 html { scroll-padding-top: calc(84px + var(--preview-h, 0px)); }
 
