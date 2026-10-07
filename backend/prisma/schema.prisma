@@ -165,7 +165,7 @@ model ScheduledPost {
   caption     String?
   mediaUrls   String // JSON array string
   scheduledAt DateTime
-  status      String        @default("SCHEDULED") // SCHEDULED|PUBLISHING|PUBLISHED|FAILED
+  status      String        @default("SCHEDULED") // SCHEDULED|PENDING_APPROVAL|PUBLISHING|PUBLISHED|FAILED
   externalId  String?
   error       String?
   permalink   String?
@@ -175,8 +175,14 @@ model ScheduledPost {
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
   insight     PostInsight?
+  approvalStatus      String?   // null (no approval needed) | PENDING | APPROVED | CHANGES_REQUESTED
+  approvalNote        String?   // the reviewer's note when changes are requested
+  approvalDecidedAt   DateTime?
+  approvalDecidedById String?
 
   @@index([ideaId])
+  @@index([approvalStatus, createdAt])
+  @@index([accountId, approvalStatus])
 }
 
 /// One normalized account-level metric for one UTC day.
