@@ -5,9 +5,9 @@ import { ACTING_EVENT, ApiError, api, getToken } from './api';
 
 export type Role = 'ADMIN' | 'CLIENT_POC' | 'CLIENT_MEMBER';
 
-/** The twelve switches (see backend/src/tenancy/features.constants.ts). */
+/** The switches (see backend/src/tenancy/features.constants.ts). */
 export type FeatureKey =
-  | 'planner' | 'content-lab' | 'preflight' | 'inbox' | 'automations' | 'analytics'
+  | 'planner' | 'content-lab' | 'creators' | 'preflight' | 'inbox' | 'automations' | 'analytics'
   | 'compose' | 'schedule' | 'delete-posts' | 'inbox-reply' | 'edit-brand' | 'ai';
 
 /** What `GET /auth/me` returns. */
@@ -88,3 +88,9 @@ export function featureOn(me: Me | null | undefined, key: FeatureKey): boolean {
 }
 
 export const useFeature = (key: FeatureKey) => featureOn(useMe(), key);
+
+/**
+ * For controls inside a page: like useFeature, but while nobody is known (a component shown outside the app shell, for
+ * example in a test) nothing is hidden. The server still enforces every switch.
+ */
+export const useCan = (key: FeatureKey) => { const me = useMe(); return !me || featureOn(me, key); };
