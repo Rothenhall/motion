@@ -8,7 +8,6 @@ import { api } from '@/lib/api';
 import { errorText } from '@/lib/format';
 import { toLocalInput, type Post } from '@/lib/posts';
 import { isStaff, useMe } from '@/lib/session';
-import { ApprovalBadge } from './ApprovalBadge';
 import './approvals.css';
 
 /**
@@ -50,7 +49,6 @@ export default function ApprovalPanel({ post, onChanged, onClose }: { post: Post
 
   return (
     <div className={`ap-banner ap-${view}`}>
-      <div><ApprovalBadge view={view} /></div>
       {view === 'awaiting' && <p>Your account manager is reviewing this post. It will be scheduled once it is approved.</p>}
       {view === 'approved' && <p>Approved and scheduled. If you change it, it goes back for approval.</p>}
       {view === 'changes' && (
