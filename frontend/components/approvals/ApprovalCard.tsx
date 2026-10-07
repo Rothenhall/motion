@@ -149,7 +149,7 @@ export default function ApprovalCard({ item, showClient = true, decided = false,
 
   return (
     <li className={`card ap-card ${decided ? 'ap-compact' : ''}`} aria-label={label.slice(0, 80)}>
-      <Thumb id={item.id} media={item.mediaUrls} mediaType={item.mediaType} caption={item.caption} ratio="4 / 5" />
+      <Thumb id={item.id} media={item.mediaUrls} mediaType={item.mediaType} caption={null} ratio="4 / 5" />
       <div className="ap-body">
         {item.caption ? <p className="ap-caption">{item.caption}</p> : <p className="ap-caption ap-empty">No caption ({formatName(item.mediaType)})</p>}
         <div className="ap-chips">
