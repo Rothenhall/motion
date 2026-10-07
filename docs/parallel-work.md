@@ -32,6 +32,8 @@ Frontend foundation (use it, do not reinvent it):
 | D. Approvals frontend (4) | `phase4-frontend` | `app/admin/approvals/**`, `components/admin/ApprovalsTab.tsx`, `lib/approvals.ts`, `components/approvals/**`, approval parts of `components/Composer.tsx`, `components/studio/PostDrawer.tsx`, `app/planner/page.tsx`, `lib/posts.ts` | `components/AppShell.tsx`, `app/admin/layout.tsx`, `app/admin/clients/**` |
 | E. Hardening (5) | `phase5-hardening` | `backend/src/scripts/seed-demo.ts`, `backend/src/tenancy/media-ownership.service.ts`, `backend/src/media.controller.ts`, `docs/runbook.md`, `docs/security-review.md`, `README.md`, `.github/workflows/ci.yml`, new `test/hardening.spec.ts` | `prisma/**`, `posts.controller.ts`, `scheduler.service.ts`, `frontend/**` |
 
+Only stream A edits `lib/api.ts`, `lib/session.tsx` and `lib/preview.ts` (additive changes only; the other streams ask for changes in their report). B puts its API helpers in `lib/admin.ts` and D in `lib/approvals.ts`.
+
 Shared hot spots, handled by the integrator (not by you): `app/globals.css`, `app.module.ts` provider/controller lists, the route lists in
 `test/tenancy.spec.ts`, `docs/admin-client-plan.md`, the nav entries and badges in `AppShell.tsx` for admin and approvals, and the
 `Approvals` tab registration in the admin client page. If you must touch one, keep the edit to a few clearly separate lines and say so in your report.
@@ -60,6 +62,39 @@ Shared hot spots, handled by the integrator (not by you): `app/globals.css`, `ap
    which belong to the user's running app).
 8. Finish with a short report: what you built, files changed, tests added and results, anything you could not finish, every shared
    hot spot you touched, and anything the integrator must wire (exact lines).
+
+## Running your own stack (UI streams A, B and D; E for the seed)
+
+Everything below uses names unique to you, so five streams can run together. Ports 3000 and 3001 and the database `motion` belong to the
+user's running app: never touch them.
+
+| Stream | Test DB (jest) | UI DB (your own backend) | Backend port | Frontend port |
+|---|---|---|---|---|
+| A | none | `motion_ui_a` | 3111 | 3101 |
+| B | `motion_test_b` | `motion_ui_b` | 3112 | 3102 |
+| C | `motion_test_c` | none | none | none |
+| D | none | none (a small mock server of your own) | 3114 | 3104 |
+| E | `motion_test_e` | `motion_ui_e` | 3115 | none |
+
+```bash
+docker exec motion-db-1 psql -U motion -d postgres -c 'create database motion_ui_a'
+cd backend && npm ci
+export DATABASE_URL='postgresql://motion:motion@localhost:5432/motion_ui_a?schema=public'
+npx prisma migrate deploy && npm run build
+export AUTH_SECRET='make-up-any-random-string-of-forty-plus-characters' PORT=3111 RATE_LIMIT=off
+export TOKEN_ENCRYPTION_KEY=$(node -e "console.log(require('crypto').randomBytes(32).toString('base64'))")
+export FRONTEND_URL=http://localhost:3101 PUBLIC_BASE_URL=http://localhost:3111
+DEMO_SEED=yes node dist/scripts/seed-demo.js   # demo@motion.test (staff) and acme@motion.test (client); the password is in src/scripts/seed-demo.ts
+node dist/main.js                              # run it in the background and stop it when you finish
+cd ../frontend && NEXT_PUBLIC_API_URL=http://localhost:3111 npx next dev -p 3101
+```
+
+The worktree has no `.env`, so set what the backend needs yourself as above (see `assertSecurityConfig` in `src/auth/crypto.ts` if it asks
+for more). The sample channels hold fake tokens, so nothing can reach a real platform. Stop your servers and drop your `motion_ui_*` and
+`motion_test_*` databases when you finish (`drop database` on your own names only).
+
+The browser pane is shared by every agent. If you use it, open **your own tab** (`tabs_create`) and pass its `tabId` to every call; never
+navigate or close a tab you did not open. Close your tab when done.
 
 ## The approvals contract (streams C and D both build to this)
 
