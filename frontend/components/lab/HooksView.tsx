@@ -6,6 +6,8 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Icon } from '../Icons';
 import { api } from '@/lib/api';
+import { useCan } from '@/lib/session';
+import { NotOnHint } from '../FeatureGate';
 import { errorText } from '@/lib/format';
 import { plain } from '@/lib/text';
 import { useConfirm } from '../ConfirmDialog';
@@ -23,6 +25,8 @@ const SOURCE_LABEL: Record<string, string> = { SEED: 'Starter', AI: 'AI', CUSTOM
 function categoryLabel(id: string) { return CATEGORIES.find((c) => c.id === id)?.label || id; }
 
 export default function HooksView() {
+  const canAi = useCan('ai');
+  const canCompose = useCan('compose');
   const [hooks, setHooks] = useState<Hook[]>([]);
   const [loading, setLoading] = useState(true);
   const [aiReady, setAiReady] = useState(true);
@@ -113,7 +117,7 @@ export default function HooksView() {
               <div className="field"><label className="field-label" htmlFor="hook-platform">Platform</label><Select id="hook-platform" value={request.platform} onChange={(e) => setRequest({ ...request, platform: e.target.value })}><option value="">Any</option>{PLATFORMS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}</Select></div>
               <div className="field"><label className="field-label" htmlFor="hook-style">Style</label><Select id="hook-style" value={request.category} onChange={(e) => setRequest({ ...request, category: e.target.value })}><option value="">Mix of styles</option>{CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}</Select></div>
             </div>
-            <div className="form-actions"><button className="btn" type="submit" disabled={generating || !aiReady}><Icon name="sparkles" size={15} className={generating ? 'spin' : ''} /> {generating ? 'Writing…' : 'Write hooks'}</button></div>
+            <div className="form-actions"><button className="btn" type="submit" disabled={generating || !aiReady || !canAi} aria-describedby={canAi ? undefined : 'hooks-ai-off'}><Icon name="sparkles" size={15} className={generating ? 'spin' : ''} /> {generating ? 'Writing…' : 'Write hooks'}</button>{!canAi && <NotOnHint id="hooks-ai-off" />}</div>
           </form>
         </section>
 
@@ -146,10 +150,10 @@ export default function HooksView() {
               </div>
               <div className="rule-list-actions">
                 <button className="btn btn-sm btn-soft" type="button" onClick={() => copy(hook)}><Icon name={copied === hook.id ? 'check' : 'copy'} size={13} /> {copied === hook.id ? 'Copied' : 'Copy'}</button>
-                <Tooltip>
+                {canCompose && <Tooltip>
                   <TooltipTrigger asChild><Link className="icon-btn" href={`/?compose=true&caption=${encodeURIComponent(hook.text)}`} aria-label="Start a post with this hook"><Icon name="send" size={14} /></Link></TooltipTrigger>
                   <TooltipContent>Start a post</TooltipContent>
-                </Tooltip>
+                </Tooltip>}
                 <Tooltip>
                   <TooltipTrigger asChild><button className="icon-btn icon-btn-danger" type="button" onClick={() => remove(hook)} aria-label="Remove hook"><Icon name="trash" size={14} /></button></TooltipTrigger>
                   <TooltipContent>Remove</TooltipContent>

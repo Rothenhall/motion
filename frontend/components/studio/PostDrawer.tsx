@@ -5,6 +5,8 @@ import { toast } from 'sonner';
 import Link from 'next/link';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { Icon } from '../Icons';
+import { NOT_ON } from '../FeatureGate';
+import { useCan } from '@/lib/session';
 import PhonePreview from './PhonePreview';
 import { api } from '@/lib/api';
 import { errorText, formatName, platformName, statusName } from '@/lib/format';
@@ -19,6 +21,8 @@ export default function PostDrawer({ post, onOpenChange, onChanged }: { post: Po
 
   const platform = post ? postPlatform(post) : 'instagram';
   const editable = post?.status === 'SCHEDULED';
+  const canMove = useCan('compose');
+  const canRemove = useCan('delete-posts');
 
   const move = async () => {
     if (!post) return;
@@ -54,7 +58,8 @@ export default function PostDrawer({ post, onOpenChange, onChanged }: { post: Po
               {post.idea && <Link className="st-chip" href="/lab" onClick={() => onOpenChange(false)}><Icon name="bulb" size={12} /> From idea: {post.idea.title}</Link>}
               <PhonePreview platform={platform} name={post.account?.name || platformName(platform)} caption={post.caption} media={post.mediaUrls} mediaType={post.mediaType} id={post.id} />
               {post.error && <div className="notice notice-error" role="alert"><Icon name="alert" size={15} /> {post.error}</div>}
-              {editable && (
+              {editable && !canMove && <p className="form-hint">Changing the time: {NOT_ON.toLowerCase()}.</p>}
+              {editable && canMove && (
                 <div className="field">
                   <label className="field-label" htmlFor="drawer-when">Publish time</label>
                   <div className="st-row">
@@ -66,7 +71,8 @@ export default function PostDrawer({ post, onOpenChange, onChanged }: { post: Po
             </div>
             <div className="st-drawer-foot">
               {post.permalink && <a className="btn btn-ghost" href={post.permalink} target="_blank" rel="noreferrer">Open post <Icon name="external" size={14} /></a>}
-              {editable && (confirming
+              {editable && !canRemove && <span className="form-hint">Removing posts: {NOT_ON.toLowerCase()}.</span>}
+              {editable && canRemove && (confirming
                 ? <><span className="muted">Remove this post?</span><button className="btn btn-danger" type="button" onClick={remove} disabled={busy}>Yes, remove</button><button className="btn btn-ghost" type="button" onClick={() => setConfirming(false)}>Keep</button></>
                 : <button className="btn btn-ghost" type="button" onClick={() => setConfirming(true)}><Icon name="trash" size={14} /> Remove</button>)}
             </div>

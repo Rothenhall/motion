@@ -1,0 +1,2 @@
+/* When a neighbouring widget is switched off, the one left takes the whole row. */
+.ov-bento > .ov-span-all { grid-column: span 12; }

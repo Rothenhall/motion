@@ -80,6 +80,9 @@ export class ApiError extends Error {
   }
 }
 
+/** What anyone sees when a write is tried in a read-only preview (the server's own wording is replaced, so every page says the same). */
+export const PREVIEW_READ_ONLY_MESSAGE = 'This preview is read only. Switch on admin controls to make changes.';
+
 export const isApiError = (e: unknown, code?: string): e is ApiError => e instanceof ApiError && (!code || e.code === code);
 
 export async function api<T = any>(path: string, opts?: RequestInit): Promise<T> {
@@ -102,6 +105,7 @@ export async function api<T = any>(path: string, opts?: RequestInit): Promise<T>
       if (typeof payload.code === 'string') code = payload.code;
       if (typeof payload.feature === 'string') feature = payload.feature;
     } catch { /* keep the status fallback */ }
+    if (code === 'PREVIEW_READ_ONLY') message = PREVIEW_READ_ONLY_MESSAGE;
     throw new ApiError(message, response.status, code, feature);
   }
   if (response.status === 204) return undefined as T;

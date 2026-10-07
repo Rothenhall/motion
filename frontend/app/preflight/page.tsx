@@ -6,7 +6,9 @@ import { Icon } from '../../components/Icons';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { NewCheckDialog, Prefill } from '../../components/preflight/NewCheckDialog';
 import { busy, Check, failToast, KIND_LABELS, PLATFORMS, shortDate, StatusPill } from '../../components/preflight/shared';
+import { NotOnHint } from '../../components/FeatureGate';
 import { api } from '../../lib/api';
+import { useCan } from '../../lib/session';
 import { plain } from '../../lib/text';
 
 /** One list row: a single check, or every version of a comparison folded together. */
@@ -42,6 +44,7 @@ function rows(checks: Check[]): Row[] {
 }
 
 export default function PreflightList() {
+  const canAi = useCan('ai'); // running a check uses the AI
   const router = useRouter();
   const [status, setStatus] = useState({ ai: true, audienceSimulation: false });
   const [checks, setChecks] = useState<Check[] | null>(null);
@@ -89,7 +92,8 @@ export default function PreflightList() {
       <div><div className="eyebrow">Before you post</div><h1>Pre-flight check</h1><p>See how people will likely react to a reel before it goes live: predicted attention, a simulated brain response and the fixes to make.</p></div>
       <div className="page-intro-actions">
         <span className={status.audienceSimulation ? 'live-pill' : 'status-pill status-draft'} role="status">{status.audienceSimulation && <i aria-hidden="true" />}{status.audienceSimulation ? 'Audience simulation on' : 'AI review'}</span>
-        <button className="btn" type="button" onClick={() => { setPrefill(null); setDialogOpen(true); }} disabled={!status.ai}><Icon name="plus" size={15} /> New reel check</button>
+        <button className="btn" type="button" onClick={() => { setPrefill(null); setDialogOpen(true); }} disabled={!status.ai || !canAi} aria-describedby={canAi ? undefined : 'pf-ai-off'}><Icon name="plus" size={15} /> New reel check</button>
+        {!canAi && <NotOnHint id="pf-ai-off" />}
       </div>
     </section>
 
@@ -103,7 +107,7 @@ export default function PreflightList() {
         <div className="empty-icon"><Icon name="gauge" size={18} /></div>
         <strong>No checks yet</strong>
         Upload a reel to see how viewers will likely react before you post it.
-        <button className="btn btn-sm" type="button" style={{ marginTop: 12 }} onClick={() => setDialogOpen(true)} disabled={!status.ai}><Icon name="plus" size={13} /> New reel check</button>
+        <button className="btn btn-sm" type="button" style={{ marginTop: 12 }} onClick={() => setDialogOpen(true)} disabled={!status.ai || !canAi}><Icon name="plus" size={13} /> New reel check</button>
       </div> : <div className="table-wrap">
         <table className="data-table pf-table">
           <thead><tr><th scope="col">Post</th><th scope="col">Platform</th><th scope="col">Checked</th><th scope="col">Status</th><th scope="col">Hook</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
