@@ -43,9 +43,10 @@ export class AdminClientsController {
       this.prisma.socialAccount.findMany({ where: { clientId: { in: ids } }, select: { id: true, clientId: true, provider: true, name: true, disconnectedAt: true } }),
     ]);
     const accountIds = accounts.map((a) => a.id);
-    const [counts, last] = await Promise.all([
+    const [counts, last, pendingByAccount] = await Promise.all([
       this.prisma.scheduledPost.groupBy({ by: ['accountId', 'status'], where: { accountId: { in: accountIds }, status: { in: ['SCHEDULED', 'FAILED'] } }, _count: { _all: true } }),
       this.prisma.scheduledPost.groupBy({ by: ['accountId'], where: { accountId: { in: accountIds } }, _max: { updatedAt: true } }),
+      this.prisma.scheduledPost.groupBy({ by: ['accountId'], where: { accountId: { in: accountIds }, approvalStatus: 'PENDING' }, _count: { _all: true } }),
     ]);
     const clientOf = new Map(accounts.map((a) => [a.id, a.clientId]));
 
@@ -70,6 +71,7 @@ export class AdminClientsController {
         disconnectedChannels: mine.filter((a) => a.disconnectedAt).length,
         scheduledPosts: sum('SCHEDULED'),
         failedPosts: sum('FAILED'),
+        pendingApprovals: pendingByAccount.filter((n) => clientOf.get(n.accountId) === c.id).reduce((t, n) => t + n._count._all, 0),
         lastActivityAt: stamps.length && Math.max(...stamps) ? new Date(Math.max(...stamps)) : null,
       };
     });
@@ -112,6 +114,7 @@ export class AdminClientsController {
     const rows = (await this.withUsage(clients)).filter((c) => !c.staffWorkspace);
     const soon = new Date(Date.now() + 24 * 3_600_000);
     const dueSoon = await this.prisma.scheduledPost.count({ where: { status: 'SCHEDULED', scheduledAt: { lte: soon }, account: { client: { archivedAt: null } } } });
+    const approvalsPending = await this.prisma.scheduledPost.count({ where: { approvalStatus: 'PENDING', account: { client: { archivedAt: null } } } });
     const attention = rows
       .map((c) => ({
         clientId: c.id,
@@ -119,6 +122,7 @@ export class AdminClientsController {
         reasons: [
           c.failedPosts ? `${c.failedPosts} failed post${c.failedPosts === 1 ? '' : 's'}` : '',
           c.disconnectedChannels ? `${c.disconnectedChannels} disconnected channel${c.disconnectedChannels === 1 ? '' : 's'}` : '',
+          c.pendingApprovals ? `${c.pendingApprovals} post${c.pendingApprovals === 1 ? '' : 's'} awaiting approval` : '',
           c.pendingInvites ? `${c.pendingInvites} invitation${c.pendingInvites === 1 ? '' : 's'} not accepted` : '',
           c.status === 'SUSPENDED' ? 'paused' : '',
           !c.channels.length ? 'no channel connected' : '',
@@ -129,6 +133,7 @@ export class AdminClientsController {
       clients: { active: rows.filter((c) => c.status === 'ACTIVE').length, suspended: rows.filter((c) => c.status === 'SUSPENDED').length },
       channels: { connected: rows.reduce((t, c) => t + c.channels.length, 0), disconnected: rows.reduce((t, c) => t + c.disconnectedChannels, 0) },
       posts: { scheduled: rows.reduce((t, c) => t + c.scheduledPosts, 0), failed: rows.reduce((t, c) => t + c.failedPosts, 0), dueWithin24h: dueSoon },
+      approvals: { pending: approvalsPending },
       pendingInvites: rows.reduce((t, c) => t + c.pendingInvites, 0),
       attention,
     };
@@ -171,7 +176,7 @@ export class AdminClientsController {
 
   @Patch('clients/:id')
   async update(@Ctx() ctx: RequestContext, @Param('id') id: string, @Body() body: { name?: string; notes?: string | null; requireApproval?: boolean }) {
-    await this.client(id);
+    const existing = await this.client(id);
     const data: Prisma.ClientUpdateInput = {};
     if (body.name !== undefined) {
       const name = body.name.trim();
@@ -179,10 +184,18 @@ export class AdminClientsController {
       data.name = name;
     }
     if (body.notes !== undefined) data.notes = body.notes?.trim().slice(0, 2000) || null;
-    if (body.requireApproval !== undefined) data.requireApproval = Boolean(body.requireApproval);
+    let approvalChange: { from: boolean; to: boolean } | null = null;
+    if (body.requireApproval !== undefined) {
+      if (typeof body.requireApproval !== 'boolean') throw new BadRequestException('requireApproval must be true or false.');
+      data.requireApproval = body.requireApproval;
+      if (body.requireApproval !== existing.requireApproval) approvalChange = { from: existing.requireApproval, to: body.requireApproval };
+    }
     if (!Object.keys(data).length) throw new BadRequestException('Nothing to change.');
     await this.prisma.client.update({ where: { id }, data });
-    await this.audit.record(ctx.user.id, 'client.update', { clientId: id, targetType: 'client', targetId: id, meta: data as Prisma.InputJsonObject });
+    // The approval switch has its own audit entry (old and new value); the rest is an ordinary client update.
+    const { requireApproval: _switch, ...rest } = data;
+    if (Object.keys(rest).length) await this.audit.record(ctx.user.id, 'client.update', { clientId: id, targetType: 'client', targetId: id, meta: rest as Prisma.InputJsonObject });
+    if (approvalChange) await this.audit.record(ctx.user.id, 'approval.setting', { clientId: id, targetType: 'client', targetId: id, meta: { requireApproval: approvalChange.to, previous: approvalChange.from } });
     return this.one(id);
   }
 
