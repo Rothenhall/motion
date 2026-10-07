@@ -10,6 +10,9 @@ import { isVideoUrl, mediaSrc, parseMedia } from '../lib/media';
 import { toLocalInput, type Draft } from '../lib/posts';
 import { FORMATS_BY_PLATFORM, errorText, formatName, platformFor, platformName, type Platform } from '../lib/format';
 import PhonePreview from './studio/PhonePreview';
+import { NOT_ON } from './FeatureGate';
+import { canManageChannels } from '../lib/nav';
+import { useCan, useMe } from '../lib/session';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 type CheckRow = { id: string; status: 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED'; mediaUrls: string[]; verdict?: string | null; hook?: { rating: string; score: number } | null; createdAt: string };
@@ -56,6 +59,12 @@ export default function Composer({ open, onOpenChange, accounts, accountsLoading
   onDraftChange?: () => void;
   onScheduled?: () => void;
 }) {
+  // What this person may do. Unknown (outside the app shell) hides nothing; the server enforces every switch.
+  const me = useMe();
+  const canCompose = useCan('compose');
+  const canSchedule = useCan('schedule');
+  const canCheck = useCan('preflight');
+  const canConnect = !me || canManageChannels(me);
   const [accountId, setAccountId] = useState('');
   const [mediaType, setMediaType] = useState('IMAGE');
   const [caption, setCaption] = useState('');
@@ -189,7 +198,9 @@ export default function Composer({ open, onOpenChange, accounts, accountsLoading
   }, [formats, mediaType]);
 
   const needsMedia = mediaType !== 'TEXT';
-  const blocker = !accounts.length
+  const blocker = !canSchedule
+    ? `${NOT_ON}. You can still save drafts.`
+    : !accounts.length
     ? 'Connect a channel first.'
     : !account
       ? null
@@ -259,12 +270,17 @@ export default function Composer({ open, onOpenChange, accounts, accountsLoading
           <DialogDescription>Write your post and see how it will look on each platform.</DialogDescription>
         </DialogHeader>
 
-        {!accountsLoading && !accounts.length ? (
+        {!canCompose ? (
+          <div className="empty-state" style={{ margin: 0 }}>
+            <strong>Creating posts is not switched on for your account</strong>
+            Ask your account manager if you need it.
+          </div>
+        ) : !accountsLoading && !accounts.length ? (
           <div className="empty-state" style={{ margin: 0 }}>
             <div className="empty-icon"><Icon name="link" size={18} /></div>
-            <strong>Connect a channel to start scheduling</strong>
+            <strong>{canConnect ? 'Connect a channel to start scheduling' : 'No channels are connected yet'}</strong>
             Motion publishes to Instagram, Facebook and Threads.
-            <br /><Link className="btn btn-sm" href="/connect" onClick={() => closeComposer()} style={{ marginTop: 12 }}>Connect a channel</Link>
+            <br />{canConnect ? <Link className="btn btn-sm" href="/connect" onClick={() => closeComposer()} style={{ marginTop: 12 }}>Connect a channel</Link> : 'Your account manager connects them for you.'}
           </div>
         ) : (
           <div className="cs-grid">
@@ -337,9 +353,9 @@ export default function Composer({ open, onOpenChange, accounts, accountsLoading
               {blocker ? <span className="form-hint dialog-blocker" id="schedule-blocker">{blocker}</span> : saveState ? <span className="form-hint dialog-blocker cs-saved" role="status">{saveState === 'saving' ? 'Saving draft…' : saveState === 'saved' ? 'Draft saved' : 'Could not save the draft'}</span> : null}
               {draftId && <button className="btn btn-ghost" type="button" onClick={discardDraft}><Icon name="trash" size={14} /> Discard</button>}
               <button className="btn btn-ghost" type="button" onClick={closeComposer}>{draftId ? 'Save and close' : 'Cancel'}</button>
-              <Link className="btn btn-ghost" href={`/preflight?${new URLSearchParams([...mediaList.filter((u) => u.includes('/media/')).map((u) => ['media', u]), ['caption', caption], ['platform', platform]]).toString()}`} onClick={closeComposer}>
+              {canCheck && <Link className="btn btn-ghost" href={`/preflight?${new URLSearchParams([...mediaList.filter((u) => u.includes('/media/')).map((u) => ['media', u]), ['caption', caption], ['platform', platform]]).toString()}`} onClick={closeComposer}>
                 <Icon name="gauge" size={15} /> Check before posting
-              </Link>
+              </Link>}
               <button className="btn" type="submit" disabled={saving || uploading || !!blocker} aria-describedby={blocker ? 'schedule-blocker' : undefined}>
                 <Icon name="calendar" size={15} /> {saving ? 'Scheduling…' : 'Schedule post'}
               </button>

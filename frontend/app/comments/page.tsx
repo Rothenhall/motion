@@ -7,6 +7,8 @@ import { toast } from 'sonner';
 import { Icon } from '../../components/Icons';
 import Thumb from '../../components/studio/Thumb';
 import { api } from '../../lib/api';
+import { canManageChannels } from '../../lib/nav';
+import { useCan, useMe } from '../../lib/session';
 import { errorText, platformFor, platformName } from '../../lib/format';
 
 type Account = { id: string; provider: string; externalId: string; name?: string | null };
@@ -27,6 +29,8 @@ function when(value: string) {
 }
 
 export default function Comments() {
+  const mayReply = useCan('inbox-reply');
+  const canConnect = canManageChannels(useMe());
   const [events, setEvents] = useState<Event[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
@@ -126,7 +130,7 @@ export default function Comments() {
               </li>
             );
           })}
-          {!loading && visible.length === 0 && <li className="ib-empty"><div className="empty-icon"><Icon name="inbox" size={18} /></div><strong>{filter === 'needs' ? 'All caught up' : 'Nothing here'}</strong><span>{filter === 'needs' ? 'Every comment has a reply.' : accounts.length ? 'New comments from connected channels will appear here.' : 'Connect a channel to start receiving comments.'}</span>{!accounts.length && <Link className="btn btn-sm" href="/connect">Connect a channel</Link>}</li>}
+          {!loading && visible.length === 0 && <li className="ib-empty"><div className="empty-icon"><Icon name="inbox" size={18} /></div><strong>{filter === 'needs' ? 'All caught up' : 'Nothing here'}</strong><span>{filter === 'needs' ? 'Every comment has a reply.' : accounts.length ? 'New comments from connected channels will appear here.' : canConnect ? 'Connect a channel to start receiving comments.' : 'Your account manager connects your channels.'}</span>{!accounts.length && canConnect && <Link className="btn btn-sm" href="/connect">Connect a channel</Link>}</li>}
         </ul>
       </section>
 
@@ -142,7 +146,9 @@ export default function Comments() {
               <div className="ib-msg">{selected.text || 'New comment received.'}</div>
               {selected.replied && <div className="ib-msg me">You replied{selected.dmSent ? ' and sent a private message.' : '.'}</div>}
             </div>
-            {canReply ? (
+            {canReply && !mayReply ? (
+              <p className="ib-note">Replying is not switched on for your account.</p>
+            ) : canReply ? (
               <form className="ib-reply" onSubmit={reply}>
                 <div className="ib-quick" aria-label="Quick replies">
                   {quick.map((q) => <button key={q} type="button" className="st-chip" onClick={() => { setForm((f) => ({ ...f, text: q })); textRef.current?.focus(); }}>{q.length > 34 ? `${q.slice(0, 34)}…` : q}</button>)}
@@ -183,7 +189,7 @@ export default function Comments() {
             <div><dt>Comment ID</dt><dd className="code-input">{selected.commentId}</dd></div>
           </dl>
         ) : <p className="ov-stat-note">Details about the selected conversation appear here.</p>}
-        <details className="inline-details ib-manual">
+        {mayReply && <details className="inline-details ib-manual">
           <summary>Reply to a comment by ID</summary>
           <form className="form-grid" onSubmit={reply}>
             <div className="field"><label className="field-label" htmlFor="comment-account">From account</label><Select id="comment-account" value={form.accountId} onChange={(event) => { const acc = accounts.find((item) => item.id === event.target.value); setForm({ ...form, accountId: event.target.value, platform: platformFor(acc?.provider) }); }} required><option value="">Choose an account</option>{replyable.map((a) => <option key={a.id} value={a.id}>{a.name || a.externalId} · {platformName(a.provider)}</option>)}</Select></div>
@@ -191,7 +197,7 @@ export default function Comments() {
             <div className="field"><label className="field-label" htmlFor="comment-text-manual">Message</label><textarea id="comment-text-manual" rows={3} value={form.text} onChange={(event) => setForm({ ...form, text: event.target.value.slice(0, REPLY_LIMIT) })} required /></div>
             <button className="btn btn-sm" type="submit" disabled={sending || !replyable.length}>{sending ? 'Sending…' : 'Send'}</button>
           </form>
-        </details>
+        </details>}
       </aside>
     </div>
   </div>;

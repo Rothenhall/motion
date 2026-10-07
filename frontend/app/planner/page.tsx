@@ -9,6 +9,7 @@ import Insight from '../../components/studio/Insight';
 import PostDrawer from '../../components/studio/PostDrawer';
 import Thumb from '../../components/studio/Thumb';
 import { api } from '../../lib/api';
+import { useCan } from '../../lib/session';
 import { errorText, formatName, platformName, statusName } from '../../lib/format';
 import { addDays, dayKey, fmtTime, needsMedia, postPlatform, reschedule, startOfDay, startOfWeek, type Post } from '../../lib/posts';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -32,6 +33,7 @@ const weekdayShort = new Intl.DateTimeFormat(undefined, { weekday: 'short' });
 const dayLong = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
 
 export default function Planner() {
+  const canCompose = useCan('compose'); // creating, moving and editing posts
   const [posts, setPosts] = useState<Post[]>([]);
   const [stats, setStats] = useState<PostStat[]>([]);
   const [loading, setLoading] = useState(true);
@@ -111,7 +113,7 @@ export default function Planner() {
   const drop = async (day: Date, partId?: string) => {
     const post = posts.find((p) => p.id === dragId);
     setDragId(null); setOverKey(null);
-    if (!post || post.status !== 'SCHEDULED') return;
+    if (!post || post.status !== 'SCHEDULED' || !canCompose) return;
     const from = new Date(post.scheduledAt);
     const part = partId ? PARTS.find((p) => p.id === partId)! : null;
     const target = new Date(day.getFullYear(), day.getMonth(), day.getDate(), from.getHours(), from.getMinutes());
@@ -146,7 +148,7 @@ export default function Planner() {
     <section className="page-intro">
       <div><div className="eyebrow">Publishing calendar</div><h1>Content planner</h1><p>Every scheduled post across your channels. Drag a post to another day to reschedule it.</p></div>
       <div className="page-intro-actions">
-        <Link className="btn" href="/?compose=true"><Icon name="plus" size={16} /> Create post</Link>
+        {canCompose && <Link className="btn" href="/?compose=true"><Icon name="plus" size={16} /> Create post</Link>}
       </div>
     </section>
 
@@ -207,8 +209,8 @@ export default function Planner() {
                         onDrop={(e) => { e.preventDefault(); drop(day, part.id); }}
                       >
                         {loading && !items.length && part.id === 'morning' && <div className="skeleton" style={{ height: 44 }} aria-hidden="true" />}
-                        {items.map((p) => <EventCard key={p.id} post={p} dragging={dragId === p.id} onOpen={() => setOpen(p)} onDragStart={() => setDragId(p.id)} onDragEnd={() => { setDragId(null); setOverKey(null); }} />)}
-                        {!loading && !past && items.length === 0 && (
+                        {items.map((p) => <EventCard key={p.id} post={p} canMove={canCompose} dragging={dragId === p.id} onOpen={() => setOpen(p)} onDragStart={() => setDragId(p.id)} onDragEnd={() => { setDragId(null); setOverKey(null); }} />)}
+                        {!loading && !past && canCompose && items.length === 0 && (
                           <Link className="pl-add" href={`/?compose=true&date=${key}`} aria-label={`Schedule a post on ${dayLong.format(day)}, ${part.label.toLowerCase()}`}><Icon name="plus" size={12} /></Link>
                         )}
                       </div>
@@ -236,13 +238,13 @@ export default function Planner() {
                     <div className="day-number"><span className="sr-only">{dayLong.format(day)}{key === todayKey ? ', today' : ''}, </span><span aria-hidden="true">{day.getDate()}</span><span className="sr-only">{items.length ? `${items.length} post${items.length === 1 ? '' : 's'}` : 'nothing scheduled'}</span></div>
                     <div className="pl-minis">
                       {items.slice(0, 4).map((p) => (
-                        <button key={p.id} type="button" className="pl-mini" draggable={p.status === 'SCHEDULED'} onDragStart={() => setDragId(p.id)} onDragEnd={() => { setDragId(null); setOverKey(null); }} onClick={() => setOpen(p)} aria-label={`${p.caption || formatName(p.mediaType)}, ${fmtTime(p.scheduledAt)}, ${statusName(p.status)}`}>
+                        <button key={p.id} type="button" className="pl-mini" draggable={p.status === 'SCHEDULED' && canCompose} onDragStart={() => setDragId(p.id)} onDragEnd={() => { setDragId(null); setOverKey(null); }} onClick={() => setOpen(p)} aria-label={`${p.caption || formatName(p.mediaType)}, ${fmtTime(p.scheduledAt)}, ${statusName(p.status)}`}>
                           <Thumb id={p.id} media={p.mediaUrls} mediaType={p.mediaType} caption={p.caption} ratio="1 / 1" />
                         </button>
                       ))}
                     </div>
                     {items.length > 4 && <span className="more-events">+{items.length - 4} more</span>}
-                    {!loading && !past && items.length === 0 && <Link className="day-add" href={`/?compose=true&date=${key}`} aria-label={`Schedule a post on ${dayLong.format(day)}`}><Icon name="plus" size={13} /><span>Add</span></Link>}
+                    {!loading && !past && canCompose && items.length === 0 && <Link className="day-add" href={`/?compose=true&date=${key}`} aria-label={`Schedule a post on ${dayLong.format(day)}`}><Icon name="plus" size={13} /><span>Add</span></Link>}
                   </div>
                 );
               })}
@@ -286,15 +288,15 @@ export default function Planner() {
           </tbody>
         </table>
         {loading && <div className="empty-state" aria-busy="true">Loading your queue…</div>}
-        {!loading && upcoming.length === 0 && <div className="empty-state"><div className="empty-icon"><Icon name="send" size={18} /></div><strong>Nothing scheduled{filter !== 'all' ? ` for ${platformName(filter)}` : ''}</strong>Your next post will appear here.<br /><Link className="card-action" href="/?compose=true">Schedule a post <Icon name="arrow-right" size={13} /></Link></div>}
+        {!loading && upcoming.length === 0 && <div className="empty-state"><div className="empty-icon"><Icon name="send" size={18} /></div><strong>Nothing scheduled{filter !== 'all' ? ` for ${platformName(filter)}` : ''}</strong>Your next post will appear here.{canCompose && <><br /><Link className="card-action" href="/?compose=true">Schedule a post <Icon name="arrow-right" size={13} /></Link></>}</div>}
       </div>
     </section>
   </div>;
 }
 
-function EventCard({ post, dragging, onOpen, onDragStart, onDragEnd }: { post: Post; dragging: boolean; onOpen: () => void; onDragStart: () => void; onDragEnd: () => void }) {
+function EventCard({ post, canMove, dragging, onOpen, onDragStart, onDragEnd }: { post: Post; canMove: boolean; dragging: boolean; onOpen: () => void; onDragStart: () => void; onDragEnd: () => void }) {
   const platform = postPlatform(post);
-  const movable = post.status === 'SCHEDULED';
+  const movable = post.status === 'SCHEDULED' && canMove;
   const warn = post.status === 'FAILED' || needsMedia(post);
   return (
     <button

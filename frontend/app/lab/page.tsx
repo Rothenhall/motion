@@ -8,7 +8,9 @@ import HooksView from '../../components/lab/HooksView';
 import { Icon } from '../../components/Icons';
 import { Select } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { NotOnHint } from '../../components/FeatureGate';
 import { api } from '../../lib/api';
+import { useCan } from '../../lib/session';
 import { errorText, formatName } from '../../lib/format';
 import { plain } from '../../lib/text';
 
@@ -27,6 +29,8 @@ const postText = (idea: Idea) => [plain(idea.caption || idea.hook), idea.hashtag
 function LabInner() {
   const router = useRouter();
   const params = useSearchParams();
+  const canAi = useCan('ai');
+  const canCompose = useCan('compose');
   const view = params.get('view') === 'hooks' ? 'hooks' : 'board';
   const setView = (v: string) => router.replace(v === 'hooks' ? '/lab?view=hooks' : '/lab');
 
@@ -133,9 +137,10 @@ function LabInner() {
             <input aria-label="Topic or campaign" placeholder={profile ? 'Ideas about… (leave empty for a mix across your pillars)' : 'Set up your brand voice first, then ask for ideas'} value={request.topic} onChange={(e) => setRequest({ ...request, topic: e.target.value })} maxLength={300} />
             <Select aria-label="Platform" className="lab-sel" value={request.platform} onChange={(e) => setRequest({ ...request, platform: e.target.value })}><option value="">All platforms</option>{PLATFORMS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}</Select>
             <Select aria-label="How many ideas" className="lab-sel" value={request.count} onChange={(e) => setRequest({ ...request, count: Number(e.target.value) })}>{[3, 5, 8, 10].map((n) => <option key={n} value={n}>{n} ideas</option>)}</Select>
-            <button className="btn" type="submit" disabled={generating || (!!profile && !aiReady)}>
+            <button className="btn" type="submit" disabled={generating || !canAi || (!!profile && !aiReady)} aria-describedby={canAi ? undefined : 'ai-off'}>
               <Icon name="sparkles" size={15} className={generating ? 'spin' : ''} /> {generating ? 'Thinking…' : profile ? 'Generate' : 'Set up voice'}
             </button>
+            {!canAi && <NotOnHint id="ai-off" />}
           </form>
 
           <div className="lab-board">
@@ -170,7 +175,7 @@ function LabInner() {
                       {idea.angle && <p className="lab-angle">{plain(idea.angle)}</p>}
                       {idea.caption && <details className="idea-caption"><summary>Caption draft</summary><p>{plain(idea.caption)}</p>{idea.hashtags.length > 0 && <p className="idea-tags">{idea.hashtags.map((h) => `#${h}`).join(' ')}</p>}</details>}
                       <div className="lab-actions">
-                        <button className="btn btn-sm" type="button" onClick={() => startPostFrom(idea)}><Icon name="send" size={13} /> Use in post</button>
+                        {canCompose && <button className="btn btn-sm" type="button" onClick={() => startPostFrom(idea)}><Icon name="send" size={13} /> Use in post</button>}
                         {idea.status === 'NEW' && <button className="btn btn-sm btn-soft" type="button" onClick={() => move(idea, 'SAVED')}><Icon name="star" size={13} /> Save</button>}
                         <button className="icon-btn icon-btn-danger" type="button" onClick={() => move(idea, 'DISMISSED')} aria-label={`Dismiss ${idea.title}`}><Icon name="x" size={13} /></button>
                       </div>
