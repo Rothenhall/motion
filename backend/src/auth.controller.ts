@@ -118,51 +118,59 @@ export class AuthController {
     void this.audit.record(owner.userId, 'channel.connect', { clientId: owner.clientId, targetType: 'channel', meta: { provider, label } });
     // Pull first insights for this client's channels in the background so Analytics has data by the time they look.
     this.insights.syncClient(owner.clientId).catch(() => undefined);
-    return res.redirect(`${process.env.FRONTEND_URL}/connect?connected=${provider}&account=${encodeURIComponent(label)}`);
+    return res.redirect(`${process.env.FRONTEND_URL}/admin/clients/${encodeURIComponent(owner.clientId)}?tab=channels&connected=${encodeURIComponent(provider)}&account=${encodeURIComponent(label)}`);
   }
 
-  private fail(res: any, err: unknown) {
-    return res.redirect(`${process.env.FRONTEND_URL}/connect?error=${encodeURIComponent(this.meta.msg(err))}`);
+  /**
+   * Back to the client's Channels tab with the reason. The client comes from the owner when we have one, or from the signed
+   * state when it can still be read (for example the person cancelled on Meta). Otherwise the admin home shows the message.
+   */
+  private fail(res: any, err: unknown, owner?: ChannelOwner | null, state?: string) {
+    const payload = state ? verifyToken(state, 'oauth_state') : null;
+    const clientId = owner?.clientId ?? (typeof payload?.clientId === 'string' ? payload.clientId : null);
+    const error = `error=${encodeURIComponent(this.meta.msg(err))}`;
+    const base = process.env.FRONTEND_URL;
+    return res.redirect(clientId ? `${base}/admin/clients/${encodeURIComponent(clientId)}?tab=channels&${error}` : `${base}/admin?${error}`);
   }
 
   @Public()
   @Get('facebook/callback')
   async fbCb(@Query('code') code: string, @Query('state') state: string, @Res() res: any) {
-    if (!code) return this.fail(res, new Error('Facebook authorization was cancelled.'));
+    if (!code) return this.fail(res, new Error('Facebook authorization was cancelled.'), null, state);
     const owner = await this.stateOwner(state, 'facebook');
-    if (!owner) return this.fail(res, new Error(EXPIRED));
+    if (!owner) return this.fail(res, new Error(EXPIRED), null, state);
     try {
       const r = await this.meta.connectFacebook(code, owner);
       const label = r.count > 1 ? `${r.count} Pages` : r.name;
       return this.done(res, 'facebook', label, owner);
     } catch (e) {
-      return this.fail(res, e);
+      return this.fail(res, e, owner, state);
     }
   }
   @Public()
   @Get('instagram/callback')
   async igCb(@Query('code') code: string, @Query('state') state: string, @Res() res: any) {
-    if (!code) return this.fail(res, new Error('Instagram authorization was cancelled.'));
+    if (!code) return this.fail(res, new Error('Instagram authorization was cancelled.'), null, state);
     const owner = await this.stateOwner(state, 'instagram');
-    if (!owner) return this.fail(res, new Error(EXPIRED));
+    if (!owner) return this.fail(res, new Error(EXPIRED), null, state);
     try {
       const r = await this.meta.connectInstagram(code, owner);
       return this.done(res, 'instagram', r.name, owner);
     } catch (e) {
-      return this.fail(res, e);
+      return this.fail(res, e, owner, state);
     }
   }
   @Public()
   @Get('threads/callback')
   async thCb(@Query('code') code: string, @Query('state') state: string, @Res() res: any) {
-    if (!code) return this.fail(res, new Error('Threads authorization was cancelled.'));
+    if (!code) return this.fail(res, new Error('Threads authorization was cancelled.'), null, state);
     const owner = await this.stateOwner(state, 'threads');
-    if (!owner) return this.fail(res, new Error(EXPIRED));
+    if (!owner) return this.fail(res, new Error(EXPIRED), null, state);
     try {
       const r = await this.meta.connectThreads(code, owner);
       return this.done(res, 'threads', r.name, owner);
     } catch (e) {
-      return this.fail(res, e);
+      return this.fail(res, e, owner, state);
     }
   }
 
