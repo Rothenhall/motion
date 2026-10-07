@@ -9,8 +9,11 @@ import { NOT_ON } from '../FeatureGate';
 import { useCan } from '@/lib/session';
 import PhonePreview from './PhonePreview';
 import { api } from '@/lib/api';
-import { errorText, formatName, platformName, statusName } from '@/lib/format';
-import { postPlatform, reschedule, toLocalInput, type Post } from '@/lib/posts';
+import { errorText, formatName, platformName } from '@/lib/format';
+import ApprovalPanel from '../approvals/ApprovalPanel';
+import { ApprovalBadge } from '../approvals/ApprovalBadge';
+import { approvalView } from '@/lib/approvals';
+import { postPlatform, postStatusLabel, reschedule, toLocalInput, type Post } from '@/lib/posts';
 
 /** Slide-over detail for one post: how it looks, when it goes out, and the two things you can do to it. */
 export default function PostDrawer({ post, onOpenChange, onChanged }: { post: Post | null; onOpenChange: (open: boolean) => void; onChanged: () => void }) {
@@ -50,7 +53,7 @@ export default function PostDrawer({ post, onOpenChange, onChanged }: { post: Po
               <SheetTitle>{post.caption ? post.caption.slice(0, 60) : `${formatName(post.mediaType)} post`}</SheetTitle>
               <SheetDescription>{platformName(platform)}{post.account?.name ? ` · ${post.account.name}` : ''}</SheetDescription>
               <div className="st-drawer-meta">
-                <span className={`status-pill status-${post.status.toLowerCase()}`}>{statusName(post.status)}</span>
+                {approvalView(post) ? <ApprovalBadge post={post} /> : <span className={`status-pill status-${post.status.toLowerCase()}`}>{postStatusLabel(post)}</span>}
                 <span className="muted">{new Date(post.scheduledAt).toLocaleString(undefined, { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
               </div>
             </div>
@@ -58,6 +61,7 @@ export default function PostDrawer({ post, onOpenChange, onChanged }: { post: Po
               {post.idea && <Link className="st-chip" href="/lab" onClick={() => onOpenChange(false)}><Icon name="bulb" size={12} /> From idea: {post.idea.title}</Link>}
               <PhonePreview platform={platform} name={post.account?.name || platformName(platform)} caption={post.caption} media={post.mediaUrls} mediaType={post.mediaType} id={post.id} />
               {post.error && <div className="notice notice-error" role="alert"><Icon name="alert" size={15} /> {post.error}</div>}
+              <ApprovalPanel post={post} onChanged={onChanged} onClose={() => onOpenChange(false)} />
               {editable && !canMove && <p className="form-hint">Changing the time: {NOT_ON.toLowerCase()}.</p>}
               {editable && canMove && (
                 <div className="field">

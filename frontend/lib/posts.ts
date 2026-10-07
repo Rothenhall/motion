@@ -1,6 +1,14 @@
 import { api } from './api';
 import { platformFor, type Platform } from './format';
 import { parseMedia } from './media';
+import { APPROVAL_LABEL, approvalView, type ApprovalStatus } from './approvals';
+import { statusName } from './format';
+
+/** The status words a person sees: approval states first, then the usual ones. */
+export function postStatusLabel(post: Pick<Post, 'status' | 'approvalStatus'>): string {
+  const view = approvalView(post);
+  return view ? APPROVAL_LABEL[view] : statusName(post.status);
+}
 
 export type Post = {
   id: string;
@@ -12,6 +20,10 @@ export type Post = {
   scheduledAt: string;
   status: string;
   error?: string | null;
+  /** Approval workflow: set only for clients that need their posts approved. */
+  approvalStatus?: ApprovalStatus | null;
+  approvalNote?: string | null;
+  approvalDecidedAt?: string | null;
   permalink?: string | null;
   idea?: { id: string; title: string } | null;
   account?: { id?: string; provider: string; name?: string | null; externalId?: string };
