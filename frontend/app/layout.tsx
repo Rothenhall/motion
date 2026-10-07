@@ -1,6 +1,7 @@
 import './globals.css';
 import { Montserrat, JetBrains_Mono } from 'next/font/google';
 import AppShell from '../components/AppShell';
+import { SessionProvider } from '../lib/session';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
@@ -30,9 +31,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script dangerouslySetInnerHTML={{ __html: themeInit }} />
       </head>
       <body>
-        <TooltipProvider delayDuration={300}>
-          <AppShell>{children}</AppShell>
-        </TooltipProvider>
+        <SessionProvider>
+          <TooltipProvider delayDuration={300}>
+            <AppShell>{children}</AppShell>
+          </TooltipProvider>
+        </SessionProvider>
         <Toaster position="bottom-right" closeButton />
       </body>
     </html>

@@ -359,6 +359,26 @@ describe('Staff and clients', () => {
       await http().get('/posts').set(bearer(c.token)).expect(200);
     });
 
+    it('records when staff start and stop previewing a client, and refuses unknown or archived ones', async () => {
+      const c = await newClient('Adm Preview Co', 'adm-preview@example.com');
+      const t = bearer(staff.token);
+      expect((await http().post('/admin/preview/start').set(t).send({ clientId: c.client.id, mode: 'admin' }).expect(200)).body).toEqual({ ok: true, mode: 'admin' });
+      expect((await http().post('/admin/preview/start').set(t).send({ clientId: c.client.id }).expect(200)).body.mode).toBe('view'); // read only unless asked otherwise
+      await http().post('/admin/preview/exit').set(t).send({ clientId: c.client.id }).expect(200);
+      await http().post('/admin/preview/start').set(t).send({ clientId: 'no-such-client' }).expect(404);
+      await http().post('/admin/preview/start').set(t).send({}).expect(404);
+
+      const log = (await http().get(`/admin/clients/${c.client.id}/audit`).set(t).expect(200)).body.filter((e: any) => e.action.startsWith('preview.'));
+      expect(log.map((e: any) => e.action).sort()).toEqual(['preview.exit', 'preview.start', 'preview.start']);
+      expect(log.find((e: any) => e.action === 'preview.start' && e.meta?.mode === 'admin')).toBeTruthy();
+      expect(log[0].actor.email).toBe('adm-staff@example.com');
+
+      // Clients cannot reach it at all.
+      await http().post('/admin/preview/start').set(bearer(c.token)).send({ clientId: c.client.id }).expect(404);
+      await http().post(`/admin/clients/${c.client.id}/archive`).set(t).expect(200);
+      await http().post('/admin/preview/start').set(t).send({ clientId: c.client.id }).expect(404);
+    });
+
     it('sets switches in bulk, validates them, and logs only real changes', async () => {
       const c = await newClient('Adm Switch Co', 'adm-switch@example.com');
       const t = bearer(staff.token);

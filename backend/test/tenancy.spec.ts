@@ -576,6 +576,7 @@ describe('Client workspaces', () => {
       'PATCH /admin/clients/:id/seats', 'GET /admin/clients/:id/features', 'PUT /admin/clients/:id/features',
       'GET /admin/clients/:id/users', 'POST /admin/clients/:id/invite', 'GET /admin/clients/:id/channels', 'GET /admin/clients/:id/audit',
       'POST /admin/users/:id/resend-invite', 'POST /admin/users/:id/reset-link', 'POST /admin/users/:id/disable', 'POST /admin/users/:id/enable',
+      'POST /admin/preview/start', 'POST /admin/preview/exit',
     ];
     // Signed in, but about the app or the caller rather than any client's data.
     const SESSION = ['GET /auth/me', 'GET /ai/status', 'GET /preflight/status', 'POST /auth/logout-all'];

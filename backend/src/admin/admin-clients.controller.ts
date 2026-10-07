@@ -79,6 +79,30 @@ export class AdminClientsController {
     return (await this.withUsage([await this.client(id)]))[0];
   }
 
+  // ---------------------------------------------------------------- previewing a client
+
+  /**
+   * The web app calls these when staff start or stop previewing a client, so the audit log shows who looked at whose
+   * workspace and in which mode. They change nothing else: the preview itself is the X-Client-Id / X-Preview-Mode headers.
+   */
+  @Post('preview/start')
+  @HttpCode(200)
+  async previewStart(@Ctx() ctx: RequestContext, @Body() body: { clientId?: string; mode?: string }) {
+    const client = await this.client(String(body.clientId || ''));
+    if (client.archivedAt) throw new NotFoundException('Client not found.');
+    const mode = body.mode === 'admin' ? 'admin' : 'view';
+    await this.audit.record(ctx.user.id, 'preview.start', { clientId: client.id, targetType: 'client', targetId: client.id, meta: { mode } });
+    return { ok: true, mode };
+  }
+
+  @Post('preview/exit')
+  @HttpCode(200)
+  async previewExit(@Ctx() ctx: RequestContext, @Body() body: { clientId?: string }) {
+    const client = await this.client(String(body.clientId || ''));
+    await this.audit.record(ctx.user.id, 'preview.exit', { clientId: client.id, targetType: 'client', targetId: client.id });
+    return { ok: true };
+  }
+
   // ---------------------------------------------------------------- overview
 
   /** The cross-client picture: what needs a person's attention today. */
