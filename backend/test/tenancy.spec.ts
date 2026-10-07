@@ -359,12 +359,14 @@ describe('Client workspaces', () => {
     });
 
     it('can be closed with ALLOW_SIGNUP=false', async () => {
+      const was = process.env.ALLOW_SIGNUP;
       process.env.ALLOW_SIGNUP = 'false';
       try {
         await http().post('/auth/register').send({ email: 'tenancy-closed@example.com', password: 'password123' }).expect(403);
         expect(await prisma.user.findUnique({ where: { email: 'tenancy-closed@example.com' } })).toBeNull();
       } finally {
-        delete process.env.ALLOW_SIGNUP;
+        if (was === undefined) delete process.env.ALLOW_SIGNUP;
+        else process.env.ALLOW_SIGNUP = was;
       }
     });
   });
@@ -565,22 +567,39 @@ describe('Client workspaces', () => {
       'GET /preflight', 'POST /preflight', 'POST /preflight/compare', 'GET /preflight/groups/:groupId', 'GET /preflight/:id', 'GET /preflight/:id/brain', 'POST /preflight/:id/brain', 'POST /preflight/:id/retry', 'DELETE /preflight/:id',
       'GET /dashboard', 'GET /analytics', 'POST /analytics/sync',
       'POST /media/upload', 'GET /auth/:provider/start',
+      'GET /team/members', 'POST /team/invite', 'POST /team/users/:id/resend-invite', 'POST /team/users/:id/disable', 'POST /team/users/:id/enable',
+    ];
+    // Staff only: everyone else is told these do not exist (404).
+    const ADMIN = [
+      'GET /admin/overview', 'GET /admin/clients', 'POST /admin/clients', 'GET /admin/clients/:id', 'PATCH /admin/clients/:id',
+      'POST /admin/clients/:id/suspend', 'POST /admin/clients/:id/activate', 'POST /admin/clients/:id/archive', 'POST /admin/clients/:id/unarchive',
+      'PATCH /admin/clients/:id/seats', 'GET /admin/clients/:id/features', 'PUT /admin/clients/:id/features',
+      'GET /admin/clients/:id/users', 'POST /admin/clients/:id/invite', 'GET /admin/clients/:id/channels', 'GET /admin/clients/:id/audit',
+      'POST /admin/users/:id/resend-invite', 'POST /admin/users/:id/reset-link', 'POST /admin/users/:id/disable', 'POST /admin/users/:id/enable',
     ];
     // Signed in, but about the app or the caller rather than any client's data.
-    const SESSION = ['GET /auth/me', 'GET /ai/status', 'GET /preflight/status', 'POST /auth/exchange'];
+    const SESSION = ['GET /auth/me', 'GET /ai/status', 'GET /preflight/status', 'POST /auth/logout-all'];
     // Open to anyone: sign-in, Meta's redirects and webhooks (verified by signature).
-    const PUBLIC = ['POST /auth/login', 'POST /auth/register', 'GET /auth/facebook/callback', 'GET /auth/instagram/callback', 'GET /auth/threads/callback', 'GET /webhooks/meta', 'POST /webhooks/meta'];
+    const PUBLIC = ['POST /auth/login', 'POST /auth/register', 'POST /auth/accept-invite/validate', 'POST /auth/accept-invite', 'POST /auth/reset-password/validate', 'POST /auth/reset-password', 'GET /auth/facebook/callback', 'GET /auth/instagram/callback', 'GET /auth/threads/callback', 'GET /webhooks/meta', 'POST /webhooks/meta'];
 
     it('every route is classified, so no route can skip the scoping decision', () => {
       const stack = (app.getHttpAdapter().getInstance() as any)._router.stack as any[];
       const routes = stack.filter((l) => l.route).flatMap((l) => Object.keys(l.route.methods).map((m) => `${m.toUpperCase()} ${l.route.path}`));
-      const known = new Set([...TENANT, ...SESSION, ...PUBLIC]);
+      const known = new Set([...TENANT, ...ADMIN, ...SESSION, ...PUBLIC]);
       expect(routes.filter((r) => !known.has(r))).toEqual([]);
       expect([...known].filter((r) => !routes.includes(r))).toEqual([]); // and nothing listed here has quietly gone away
     });
 
+    it('every staff route is closed to clients: they are told it does not exist', async () => {
+      for (const route of ADMIN) {
+        const [method, path] = route.split(' ');
+        const url = path.replace(/:[a-zA-Z]+/g, 'x');
+        await (http() as any)[method.toLowerCase()](url).set(bearer(A.token)).send({}).expect(404);
+      }
+    });
+
     it('nothing but the public routes answers without a session', async () => {
-      for (const route of [...TENANT, ...SESSION]) {
+      for (const route of [...TENANT, ...ADMIN, ...SESSION]) {
         const [method, path] = route.split(' ');
         const url = path.replace(':provider', 'instagram').replace(/:[a-zA-Z]+/g, 'x');
         await (http() as any)[method.toLowerCase()](url).expect(401);

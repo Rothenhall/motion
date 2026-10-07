@@ -46,8 +46,8 @@ export class CommentsController {
     if (!commentId || !text) throw new BadRequestException('A comment ID and message are required.');
 
     const account = body.accountId
-      ? await this.prisma.socialAccount.findFirst({ where: { id: body.accountId, ...clientScope(ctx) } })
-      : await this.prisma.socialAccount.findFirst({ where: { ...clientScope(ctx), provider: platform === 'instagram' ? 'instagram' : 'facebook_page' }, orderBy: { createdAt: 'asc' } });
+      ? await this.prisma.socialAccount.findFirst({ where: { id: body.accountId, ...clientScope(ctx), disconnectedAt: null } })
+      : await this.prisma.socialAccount.findFirst({ where: { ...clientScope(ctx), disconnectedAt: null, provider: platform === 'instagram' ? 'instagram' : 'facebook_page' }, orderBy: { createdAt: 'asc' } });
     if (!account) throw new BadRequestException('Connect a matching account before replying.');
     if (platform === 'instagram' && account.provider !== 'instagram') throw new BadRequestException('Select an Instagram account for this reply.');
     if (platform === 'facebook' && account.provider !== 'facebook_page') throw new BadRequestException('Select a Facebook Page account for this reply.');

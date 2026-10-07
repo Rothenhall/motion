@@ -36,6 +36,8 @@ describe('API security', () => {
 
     alice = await register('alice@example.com');
     bob = await register('bob@example.com');
+    // Only staff connect channels now, and these suites add channels as bob. Staff without a header still see only their own workspace.
+    await prisma.user.update({ where: { email: 'bob@example.com' }, data: { role: 'ADMIN' } });
   });
 
   afterAll(async () => {
@@ -77,7 +79,7 @@ describe('API security', () => {
       ['get', '/hooks'], ['post', '/hooks'], ['post', '/hooks/generate'], ['patch', '/hooks/x/favorite'], ['post', '/hooks/x/use'], ['delete', '/hooks/x'],
       ['get', '/preflight'], ['post', '/preflight'], ['get', '/preflight/status'], ['post', '/preflight/compare'], ['get', '/preflight/x'],
       ['get', '/preflight/groups/x'], ['post', '/preflight/x/retry'], ['delete', '/preflight/x'],
-      ['get', '/auth/me'], ['get', '/auth/instagram/start'], ['post', '/auth/exchange'],
+      ['get', '/auth/me'], ['get', '/auth/instagram/start'],
     ];
 
     it.each(routes)('%s %s without a token -> 401', async (method, path) => {

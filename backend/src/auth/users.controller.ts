@@ -7,24 +7,27 @@ import { Ctx, RequestContext } from '../tenancy/ctx';
 import { FeaturesService } from '../tenancy/features.service';
 import { workspaceName } from '../tenancy/clients.service';
 import { Public } from './auth.guard';
-import { hashPassword, signToken, verifyPassword } from './crypto';
+import { hashPassword, verifyPassword } from './crypto';
+import { hasPassword } from './invites.service';
+import { sessionFor } from './session';
 
-const SESSION_TTL = 7 * 24 * 60 * 60;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MAX_FAILED = 5; // wrong passwords in a row before the account is locked
+const LOCK_MS = 15 * 60_000;
+
+// Checked against when the email is unknown, so "no such account" takes as long as "wrong password".
+let dummyHash: Promise<string> | null = null;
+const decoy = () => (dummyHash ??= hashPassword('not-a-real-password'));
 
 /** Motion user accounts: email + password, stateless signed session tokens. */
 @Controller('auth')
 export class UsersController {
   constructor(private prisma: PrismaService, private features: FeaturesService) {}
 
-  private session(user: { id: string; email: string; role: Role }) {
-    return { token: signToken(user.id, 'session', SESSION_TTL), user: { id: user.id, email: user.email, role: user.role } };
-  }
-
   /**
-   * Open sign-up for now. The very first account becomes an admin (and takes over any channels connected before accounts
-   * existed). Everyone after that is a client user with a workspace of their own, never an admin. Set ALLOW_SIGNUP=false
-   * to close sign-up once clients are invited instead.
+   * Sign-up is closed: people join by invitation. The one exception is the very first account on an empty database,
+   * which becomes an admin (and takes over any channels connected before accounts existed). Set ALLOW_SIGNUP=true to
+   * reopen open sign-up, where everyone gets a workspace of their own and never admin rights.
    */
   @Public()
   @Throttle(AUTH_LIMIT)
@@ -34,12 +37,12 @@ export class UsersController {
     const password = body.password || '';
     if (!email || !EMAIL_RE.test(email)) throw new BadRequestException('Enter a valid email address.');
     if (password.length < 8) throw new BadRequestException('Use a password of at least 8 characters.');
+
+    const isFirstUser = (await this.prisma.user.count()) === 0;
+    if (!isFirstUser && process.env.ALLOW_SIGNUP !== 'true') throw new ForbiddenException('Sign-up is by invitation. Ask your account manager.');
     if (await this.prisma.user.findUnique({ where: { email }, select: { id: true } })) {
       throw new ConflictException('An account with that email already exists.');
     }
-
-    const isFirstUser = (await this.prisma.user.count()) === 0;
-    if (!isFirstUser && process.env.ALLOW_SIGNUP === 'false') throw new ForbiddenException('Sign-up is by invitation. Ask your account manager.');
 
     const passwordHash = await hashPassword(password);
     const user = await this.prisma.$transaction(async (tx) => {
@@ -51,7 +54,7 @@ export class UsersController {
       if (isFirstUser) await tx.socialAccount.updateMany({ where: { userId: null }, data: { userId: created.id, clientId: client.id } });
       return created;
     });
-    return this.session(user);
+    return sessionFor(user);
   }
 
   @Public()
@@ -59,12 +62,33 @@ export class UsersController {
   @Post('login')
   @HttpCode(200)
   async login(@Body() body: { email?: string; password?: string }) {
+    const fail = () => new UnauthorizedException('Email or password is incorrect.');
     const email = body.email?.trim().toLowerCase() || '';
+    const password = body.password || '';
     const user = email ? await this.prisma.user.findUnique({ where: { email } }) : null;
-    if (!user || user.status !== 'ACTIVE' || !(await verifyPassword(body.password || '', user.passwordHash))) {
-      throw new UnauthorizedException('Email or password is incorrect.');
+    if (!user) {
+      await verifyPassword(password, await decoy());
+      throw fail();
     }
-    return this.session(user);
+    // Someone invited but with no password yet has nothing to match; check against the decoy so it still takes as long.
+    const correct = await verifyPassword(password, hasPassword(user.passwordHash) ? user.passwordHash : await decoy());
+    // A locked account refuses even the right password until the lock ends, with the same answer as a wrong one.
+    if (user.lockedUntil && user.lockedUntil > new Date()) throw fail();
+    if (user.status !== 'ACTIVE') throw fail();
+    if (!correct) {
+      const failed = user.failedAttempts + 1;
+      await this.prisma.user.update({ where: { id: user.id }, data: failed >= MAX_FAILED ? { failedAttempts: 0, lockedUntil: new Date(Date.now() + LOCK_MS) } : { failedAttempts: failed } });
+      throw fail();
+    }
+    const signedIn = await this.prisma.user.update({ where: { id: user.id }, data: { failedAttempts: 0, lockedUntil: null, lastLoginAt: new Date() } });
+    return sessionFor(signedIn);
+  }
+
+  /** Ends every session this user has, on every device, including the one making the request. */
+  @Post('logout-all')
+  @HttpCode(204)
+  async logoutAll(@Ctx() ctx: RequestContext) {
+    await this.prisma.user.update({ where: { id: ctx.user.id }, data: { sessionVersion: { increment: 1 } } });
   }
 
   /** Who is signed in, which client they are looking at, and what is switched on for it. The app builds its menu from this. */

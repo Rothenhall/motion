@@ -16,7 +16,7 @@ export class DashboardController {
     startOfMonth.setHours(0, 0, 0, 0);
 
     const [accounts, scheduled, published, failed, activeAutomationCount, automationCount, upcomingPosts] = await Promise.all([
-      this.prisma.socialAccount.findMany({ where: clientScope(ctx), orderBy: { createdAt: 'desc' }, select: accountSelect }),
+      this.prisma.socialAccount.findMany({ where: { ...clientScope(ctx), disconnectedAt: null }, orderBy: { createdAt: 'desc' }, select: accountSelect }),
       this.prisma.scheduledPost.count({ where: { ...owned, status: 'SCHEDULED' } }),
       this.prisma.scheduledPost.count({ where: { ...owned, status: 'PUBLISHED', updatedAt: { gte: startOfMonth } } }),
       this.prisma.scheduledPost.count({ where: { ...owned, status: 'FAILED' } }),

@@ -37,7 +37,7 @@ export class PostsController {
     const mediaUrls = mediaUrlList(body.mediaUrls);
     const clientId = requireClient(ctx);
     await this.media.assertUsable(clientId, mediaUrls);
-    const account = await this.prisma.socialAccount.findFirst({ where: { id: accountId, clientId }, select: { id: true, provider: true } });
+    const account = await this.prisma.socialAccount.findFirst({ where: { id: accountId, clientId, disconnectedAt: null }, select: { id: true, provider: true } });
     if (!account) throw new BadRequestException('That account is no longer connected.');
     if (account.provider !== PROVIDER_FOR[platform]) throw new BadRequestException(`That account can't publish to ${platform === 'facebook' ? 'Facebook' : platform === 'instagram' ? 'Instagram' : 'Threads'}. Choose a matching account.`);
     if (platform === 'instagram') assertInstagramJpeg(mediaType, mediaUrls);

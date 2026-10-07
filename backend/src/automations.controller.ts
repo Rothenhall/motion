@@ -27,7 +27,7 @@ export class AutomationsController {
     if (!TRIGGERS.includes(trigger)) throw new BadRequestException('Choose a supported trigger.');
     if (!REPLY_MODES.includes(replyMode)) throw new BadRequestException('Choose a supported reply mode.');
     if (trigger === 'COMMENT_KEYWORD' && !body.keyword?.trim()) throw new BadRequestException('Add a keyword for this trigger.');
-    const account = await this.prisma.socialAccount.findFirst({ where: { id: accountId, ...clientScope(ctx) }, select: { id: true } });
+    const account = await this.prisma.socialAccount.findFirst({ where: { id: accountId, ...clientScope(ctx), disconnectedAt: null }, select: { id: true } });
     if (!account) throw new BadRequestException('That account is no longer connected.');
 
     return this.prisma.automationRule.create({

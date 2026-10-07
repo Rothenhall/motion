@@ -40,6 +40,42 @@ Not in Phase 1 (unchanged below): invites, closed sign-up by default, admin API 
 connecting, and the frontend work. One test gap: the seven pre-flight tests that build media with `ffmpeg` cannot run on the author's
 Windows machine (CI installs it), so the pre-flight create path with media is covered there; the text path is covered here.
 
+## Phase 2 status (invites, admin API, staff-only connecting): done
+
+Built on branch `feat/multi-client-phase2`. 25 new tests (24 in `backend/test/admin.spec.ts`, plus one more classified-routes case in
+`tenancy.spec.ts`); the suite is 228 passing, with only the seven ffmpeg pre-flight tests failing on the author's machine. The new
+protections were mutation-tested (re-introducing a bug makes a test fail). What was built, and what differs from the plan:
+
+- **Sign-up is closed by default.** Only `ALLOW_SIGNUP=true` opens it; the first account on an empty database is still an admin.
+  People join by **invitation links**: random 32-byte token, only its sha256 is stored, 72 hours, single use (the redeem is one
+  atomic update, so two clicks cannot both win), and a new link cancels the old one. **No email is sent yet**: the API returns the
+  link to the admin (or the client's main contact) to pass on. Reset links work the same way (24 hours) and sign out older sessions.
+- **Sessions and sign-in.** Each session token carries the user's `sessionVersion`; it is bumped by a reset, by disabling someone and by
+  `POST /auth/logout-all`, so those take effect on the next request. Five wrong passwords lock an account for 15 minutes, and the
+  answer is the same as for a wrong password, so it reveals nothing. Unknown and invited users get a decoy password check.
+- **Admin API** (`/admin/*`, ADMIN only; everyone else is told the route does not exist): overview with what needs attention, clients
+  (create with first contact, edit, suspend, activate, archive, unarchive), seats, the twelve switches in bulk, people (invite, resend,
+  reset link, disable, enable), channels and the audit log. Seat limits count active and invited non-admin people and cannot be set
+  below what is in use. Staff workspaces cannot be archived. Every change is written to the audit log.
+- **Client team** (`/team/*`): the main contact (or staff acting as the client) invites and pauses members within the seat limit.
+  Members get 403 `TEAM_FORBIDDEN`, and nobody here can touch the main contact or staff.
+- **Connecting is staff only.** `GET /auth/:provider/start`, `POST /accounts` and `DELETE /accounts/:id` are ADMIN only (clients get 404),
+  the OAuth state carries the client chosen, and the callback re-checks that the person is still active staff and the client exists
+  and is not archived. `POST /auth/exchange`, which returned raw tokens, is gone.
+- **One channel, one client.** A channel can be connected to a single client at a time (friendly 409 `CHANNEL_ALREADY_CONNECTED` naming
+  the other client, backed by a partial unique index for requests that race). **Disconnecting is soft**: history stays, the token is
+  replaced, and publishing, syncing, automations, webhooks and new posts all stop using it. Connecting the same channel to the same
+  client again brings it back.
+
+Found while testing, not in the plan: the original `(userId, provider, externalId)` unique rule on channels would have stopped staff
+moving a channel from one client to another, because staff are the connecting user for every client. The migration drops it; ownership
+is by client now. Also, the one-connected-channel index is created by hand in the migration (Prisma cannot express it) and skipped with a
+notice if connected duplicates already exist, so the migration cannot fail on old data.
+
+Not in Phase 2: the frontend (login page still offers "create account", Connect page still shows the connect buttons to non-staff, no
+admin console, acting-client switcher or preview bar yet), approvals, and email delivery of links. **Before deploying**, set
+`ADMIN_EMAILS` (only staff can connect channels now), take a database dump, and note that sign-up is closed.
+
 ## 1. What we copy from Cailyx, and what we change
 
 Verified in Cailyx's code:

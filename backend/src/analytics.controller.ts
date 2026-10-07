@@ -27,7 +27,7 @@ export class AnalyticsController {
 
     const [accounts, rows, followerRows, published, prevPublished, topPosts, allPostInsights] = await Promise.all([
       this.prisma.socialAccount.findMany({
-        where: clientScope(ctx),
+        where: { ...clientScope(ctx), disconnectedAt: null },
         orderBy: { createdAt: 'asc' },
         select: { id: true, provider: true, name: true, insightsSyncedAt: true, insightsError: true },
       }),

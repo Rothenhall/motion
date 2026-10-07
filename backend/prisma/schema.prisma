@@ -62,6 +62,35 @@ model ClientFeatureFlag {
   @@unique([clientId, featureKey])
 }
 
+/// An invite or password-reset link. Only a hash of the token is stored, so a database leak does not leak working links.
+model AuthToken {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        String // INVITE | RESET
+  tokenHash   String    @unique // sha256 of the token
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdById String?
+  createdAt   DateTime  @default(now())
+
+  @@index([userId, type])
+}
+
+/// What staff did to a client's workspace: who, what and when. Kept even if the user or client is later removed.
+model AdminAuditLog {
+  id         String   @id @default(cuid())
+  at         DateTime @default(now())
+  actorId    String
+  clientId   String?
+  action     String // client.create, channel.disconnect, feature.set, user.invite ...
+  targetType String?
+  targetId   String?
+  meta       Json?
+
+  @@index([clientId, at])
+}
+
 /// Who uploaded which file, so one client cannot attach another client's media.
 model MediaFile {
   name         String   @id // the stored file name, e.g. 1791274079950-1cea7328.png
@@ -81,8 +110,14 @@ model User {
   status        UserStatus @default(ACTIVE)
   clientId      String? // client users: their client. admins: their home workspace.
   client        Client?    @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  invitedById   String?
+  failedAttempts Int       @default(0) // wrong passwords in a row; five lock the account for a while
+  lockedUntil   DateTime?
+  lastLoginAt   DateTime?
+  sessionVersion Int       @default(0) // bumped to sign a user out everywhere (password reset, disable)
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
+  authTokens    AuthToken[]
   accounts      SocialAccount[]
   brandProfiles BrandProfile[]
   ideas         ContentIdea[]
@@ -95,6 +130,7 @@ model User {
 
 model SocialAccount {
   id               String           @id @default(cuid())
+  disconnectedAt   DateTime? // set when staff disconnect it: history is kept, publishing and syncing stop, the token is dropped
   userId           String? // who connected it (null only for channels connected before user accounts existed)
   user             User?            @relation(fields: [userId], references: [id], onDelete: Cascade)
   clientId         String? // the client workspace that owns this channel
@@ -115,7 +151,6 @@ model SocialAccount {
   insights         AccountInsight[]
   postInsights     PostInsight[]
 
-  @@unique([userId, provider, externalId])
   @@unique([clientId, provider, externalId])
   @@index([provider, externalId])
   @@index([clientId])

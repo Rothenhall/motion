@@ -1,5 +1,5 @@
-import { BadRequestException, Body, Controller, Get, Param, Post, Query, Res } from '@nestjs/common';
-import axios from 'axios';
+import { BadRequestException, Controller, Get, Param, Query, Res } from '@nestjs/common';
+import { Role } from '@prisma/client';
 import { MetaService } from './meta.service';
 import { InsightsService } from './insights.service';
 import { Public } from './auth/auth.guard';
@@ -8,6 +8,8 @@ import { Ctx, RequestContext, requireClient } from './tenancy/ctx';
 import { ChannelOwner } from './meta.service';
 import { signToken, verifyToken } from './auth/crypto';
 import { graphVersion } from './meta-config';
+import { AuditService } from './tenancy/audit.service';
+import { Roles } from './tenancy/guards';
 
 const OAUTH_STATE_TTL = 10 * 60;
 const EXPIRED = 'This connection link expired or was not started from Motion. Please try connecting again.';
@@ -32,7 +34,7 @@ const THREADS_SCOPES = ['threads_basic','threads_content_publish','threads_manag
 
 @Controller('auth')
 export class AuthController {
-  constructor(private meta: MetaService, private insights: InsightsService, private prisma: PrismaService) {}
+  constructor(private meta: MetaService, private insights: InsightsService, private prisma: PrismaService, private audit: AuditService) {}
 
   private redirectFor(kind: string) {
     const map: any = {
@@ -49,6 +51,7 @@ export class AuthController {
    * workspace to attach the channel to and rejects forged or replayed callbacks.
    */
   @Get(':provider/start')
+  @Roles(Role.ADMIN)
   start(@Ctx() ctx: RequestContext, @Param('provider') provider: string) {
     if (!['facebook', 'instagram', 'threads'].includes(provider)) throw new BadRequestException('Choose Facebook, Instagram or Threads.');
     // The state names the user and the client the channel will belong to, so the public callback needs no session.
@@ -100,17 +103,21 @@ export class AuthController {
   private async stateOwner(state: string | undefined, provider: string): Promise<ChannelOwner | null> {
     const payload = state ? verifyToken(state, 'oauth_state') : null;
     if (!payload || payload.provider !== provider) return null;
+    // Only staff connect channels. They may have been demoted or disabled since the link was made, so ask again.
+    const user = await this.prisma.user.findUnique({ where: { id: payload.sub }, select: { role: true, status: true, clientId: true } });
+    if (!user || user.role !== Role.ADMIN || user.status !== 'ACTIVE') return null;
     // Links started before clients existed carry no client: use the user's own workspace.
-    let clientId = typeof payload.clientId === 'string' ? payload.clientId : null;
-    if (!clientId) clientId = (await this.prisma.user.findUnique({ where: { id: payload.sub }, select: { clientId: true } }))?.clientId ?? null;
-    return clientId ? { userId: payload.sub, clientId } : null;
+    const clientId = typeof payload.clientId === 'string' ? payload.clientId : user.clientId;
+    if (!clientId || !(await this.prisma.client.findFirst({ where: { id: clientId, archivedAt: null }, select: { id: true } }))) return null;
+    return { userId: payload.sub, clientId };
   }
 
   // OAuth callbacks auto-connect: exchange -> long-lived token -> profile ->
   // stored account -> recent history import. The user just lands back connected.
-  private done(res: any, provider: string, label: string, clientId: string) {
+  private done(res: any, provider: string, label: string, owner: ChannelOwner) {
+    void this.audit.record(owner.userId, 'channel.connect', { clientId: owner.clientId, targetType: 'channel', meta: { provider, label } });
     // Pull first insights for this client's channels in the background so Analytics has data by the time they look.
-    this.insights.syncClient(clientId).catch(() => undefined);
+    this.insights.syncClient(owner.clientId).catch(() => undefined);
     return res.redirect(`${process.env.FRONTEND_URL}/connect?connected=${provider}&account=${encodeURIComponent(label)}`);
   }
 
@@ -127,7 +134,7 @@ export class AuthController {
     try {
       const r = await this.meta.connectFacebook(code, owner);
       const label = r.count > 1 ? `${r.count} Pages` : r.name;
-      return this.done(res, 'facebook', label, owner.clientId);
+      return this.done(res, 'facebook', label, owner);
     } catch (e) {
       return this.fail(res, e);
     }
@@ -140,7 +147,7 @@ export class AuthController {
     if (!owner) return this.fail(res, new Error(EXPIRED));
     try {
       const r = await this.meta.connectInstagram(code, owner);
-      return this.done(res, 'instagram', r.name, owner.clientId);
+      return this.done(res, 'instagram', r.name, owner);
     } catch (e) {
       return this.fail(res, e);
     }
@@ -153,45 +160,10 @@ export class AuthController {
     if (!owner) return this.fail(res, new Error(EXPIRED));
     try {
       const r = await this.meta.connectThreads(code, owner);
-      return this.done(res, 'threads', r.name, owner.clientId);
+      return this.done(res, 'threads', r.name, owner);
     } catch (e) {
       return this.fail(res, e);
     }
   }
 
-  // Exchange code -> short-lived token server-side (keeps app secret off the client).
-  @Post('exchange')
-  async exchange(@Body() b: { provider: string; code: string }) {
-    if (b.provider === 'instagram') {
-      const r = await axios.post('https://api.instagram.com/oauth/access_token', new URLSearchParams({
-        client_id: process.env.META_IG_APP_ID || process.env.META_APP_ID!,
-        client_secret: process.env.META_IG_APP_SECRET || process.env.META_APP_SECRET!,
-        grant_type: 'authorization_code',
-        redirect_uri: this.redirectFor('instagram'),
-        code: b.code,
-      }));
-      return r.data; // { access_token, user_id, permissions }
-    }
-    if (b.provider === 'threads') {
-      let app: { id: string; secret: string };
-      try {
-        app = this.meta.threadsApp();
-      } catch (e) {
-        throw new BadRequestException(this.meta.msg(e));
-      }
-      const r = await axios.post('https://graph.threads.net/oauth/access_token', new URLSearchParams({
-        client_id: app.id,
-        client_secret: app.secret,
-        grant_type: 'authorization_code',
-        redirect_uri: this.redirectFor('threads'),
-        code: b.code,
-      }));
-      return r.data; // { access_token, user_id }
-    }
-    // facebook_page: standard Graph code exchange
-    const r = await axios.get(`https://graph.facebook.com/${graphVersion()}/oauth/access_token`, {
-      params: { client_id: process.env.META_APP_ID, client_secret: process.env.META_APP_SECRET, redirect_uri: this.redirectFor('facebook'), code: b.code },
-    });
-    return r.data;
-  }
 }

@@ -64,7 +64,7 @@ export class AutomationsService {
     const provider = PROVIDER_FOR[opts.platform];
     if (!provider || !opts.channelId || !opts.commentId) return;
     const accounts = await this.prisma.socialAccount.findMany({
-      where: { provider, externalId: opts.channelId },
+      where: { provider, externalId: opts.channelId, disconnectedAt: null },
       include: { rules: { where: { isActive: true }, orderBy: { createdAt: 'asc' } } },
     });
 

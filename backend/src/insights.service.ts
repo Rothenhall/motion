@@ -65,7 +65,7 @@ export class InsightsService {
   syncAll(): Promise<void> {
     if (!this.running) {
       this.running = (async () => {
-        const accounts = await this.prisma.socialAccount.findMany();
+        const accounts = await this.prisma.socialAccount.findMany({ where: { disconnectedAt: null } });
         for (const a of accounts) await this.syncAccount(a);
       })().finally(() => (this.running = null));
     }
@@ -77,7 +77,7 @@ export class InsightsService {
     let run = this.runningByClient.get(clientId);
     if (!run) {
       run = (async () => {
-        const accounts = await this.prisma.socialAccount.findMany({ where: { clientId } });
+        const accounts = await this.prisma.socialAccount.findMany({ where: { clientId, disconnectedAt: null } });
         for (const a of accounts) await this.syncAccount(a);
       })().finally(() => this.runningByClient.delete(clientId));
       this.runningByClient.set(clientId, run);

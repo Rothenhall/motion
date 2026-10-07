@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import { assertChannelFree } from './tenancy/channel-rules';
 import axios from 'axios';
 import { PrismaService } from './prisma.service';
 import { decryptToken, encryptToken, isEncryptedToken } from './auth/crypto';
@@ -128,6 +129,8 @@ export class MetaService implements OnModuleInit {
     if (!list.length) {
       throw new Error('No Facebook Pages found on this account. Create a Page (or ask an admin to add you), then reconnect.');
     }
+    // Check every Page first, so a clash on the last one does not leave the others half connected.
+    for (const page of list) await assertChannelFree(this.prisma, 'facebook_page', String(page.id), owner.clientId);
     for (const page of list) {
       // Page tokens don't expire once the user token is long-lived.
       await this.upsert(owner, 'facebook_page', String(page.id), page.name, page.access_token, null, { via: 'auto' });
@@ -312,7 +315,10 @@ export class MetaService implements OnModuleInit {
     tokenExpires: Date | null,
     meta?: Record<string, unknown>,
   ) {
-    const data: any = { accessToken: encryptToken(accessToken), tokenExpires };
+    // One channel, one client: refuse before touching anything if another client has it connected.
+    await assertChannelFree(this.prisma, provider, externalId, owner.clientId);
+    // Connecting again also brings back a channel that staff had disconnected.
+    const data: any = { accessToken: encryptToken(accessToken), tokenExpires, disconnectedAt: null };
     if (name) data.name = name;
     if (meta) data.meta = JSON.stringify(meta);
     try {
@@ -324,6 +330,7 @@ export class MetaService implements OnModuleInit {
     } catch (e: any) {
       // Lost a race with a parallel callback (unique client+provider+externalId) — return the winner.
       if (e?.code === 'P2002') {
+        await assertChannelFree(this.prisma, provider, externalId, owner.clientId); // lost a race against another client: say so
         const winner = await this.prisma.socialAccount.findFirst({ where: { clientId: owner.clientId, provider, externalId } });
         if (winner) return winner;
       }
@@ -335,7 +342,7 @@ export class MetaService implements OnModuleInit {
   @Cron('0 4 * * *')
   async refreshExpiringTokens() {
     const soon = new Date(Date.now() + 7 * DAY);
-    const expiring = await this.prisma.socialAccount.findMany({ where: { tokenExpires: { lt: soon } } });
+    const expiring = await this.prisma.socialAccount.findMany({ where: { tokenExpires: { lt: soon }, disconnectedAt: null } });
     for (const a of expiring) {
       try {
         const current = decryptToken(a.accessToken);

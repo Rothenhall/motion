@@ -113,16 +113,22 @@ checks and analytics. Every user belongs to one workspace and only ever sees tha
   (compose, schedule, delete-posts, inbox-reply, edit-brand, ai) are on by default except `ai`, which costs money and starts off for a
   client an admin creates. A switched-off feature answers 403 with `code: FEATURE_DISABLED`. Admins are never blocked by switches.
 - **Suspending** a client stops its users signing in at once, pauses publishing and automations, and keeps analytics syncing.
+- **Sign-up is by invitation.** An admin creates a client (`POST /admin/clients`) and gets back a link for the client's main contact to
+  set a password; that contact can invite their own team within the seat limit (`/team/*`). Links last 72 hours (resets 24), work once,
+  and are not emailed: pass them on yourself. Set `ALLOW_SIGNUP=true` to let anyone register (demos, single-owner installs).
+  Five wrong passwords lock an account for 15 minutes; disabling someone or resetting a password signs them out at once.
+- **Only staff connect channels.** Clients see what is connected but cannot add or remove it. A channel belongs to one client at a time,
+  and disconnecting keeps its history while publishing, syncing and automations stop.
 - **Existing installs.** The migration adds workspaces without promoting anyone; on the next start every existing user gets a
   workspace of their own (their channels, drafts, ideas, hooks, brand voice and checks move into it) and, if you set `ADMIN_EMAILS`,
-  your staff become admins. Back up the database first. `ALLOW_SIGNUP=false` closes open sign-up.
+  your staff become admins. Set `ADMIN_EMAILS` before updating, or nobody will be able to connect channels. Back up the database first.
 
-See `docs/admin-client-plan.md` for the full design and what is still to come (admin console, invites, preview bar).
+See `docs/admin-client-plan.md` for the full design and what is still to come (admin console and preview bar in the web app, approvals).
 
 ## Security
 
-- Every API route needs a signed-in Motion user (`Authorization: Bearer <token>` from `POST /auth/register` or `POST /auth/login`). Only sign-up/sign-in, the Meta OAuth callbacks, the webhook endpoint and `/media/*` files are public.
-- Each user sees only the channels they connected, and the posts, automations and inbox that belong to them. Channels connected before user accounts existed go to the first user who registers.
+- Every API route needs a signed-in Motion user (`Authorization: Bearer <token>` from `POST /auth/register` or `POST /auth/login`). Only sign-up/sign-in, accepting an invite or reset link, the Meta OAuth callbacks, the webhook endpoint and `/media/*` files are public.
+- Each client workspace sees only its own channels, posts, automations and inbox, and nobody can name another client's ids (404). Channels connected before workspaces existed go to the first user's workspace.
 - Meta webhook deliveries must carry a valid `X-Hub-Signature-256` made with `META_APP_SECRET` or `META_IG_APP_SECRET`; anything else gets a 401.
 - Meta access tokens are stored encrypted with `TOKEN_ENCRYPTION_KEY` (AES-256-GCM). Existing plaintext tokens are encrypted on the next boot. Keep the key stable: losing it means reconnecting every channel.
 - Sign-in and sign-up allow 10 attempts a minute per address, and every other route 600 a minute (`429` beyond that). The Meta webhook is exempt, since it is verified by signature. Behind a tunnel or proxy, set `TRUST_PROXY=1` (the number of proxies in front) so each visitor is counted separately instead of all sharing the proxy's address.

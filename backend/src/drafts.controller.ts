@@ -52,7 +52,7 @@ export class DraftsController {
     const data: { accountId?: string | null; platform?: string | null; mediaType?: string; caption?: string | null; mediaUrls?: string; scheduledAt?: Date | null; ideaId?: string | null } = {};
     if (body.accountId !== undefined) {
       if (body.accountId) {
-        const account = await this.prisma.socialAccount.findFirst({ where: { id: body.accountId, clientId }, select: { id: true } });
+        const account = await this.prisma.socialAccount.findFirst({ where: { id: body.accountId, clientId, disconnectedAt: null }, select: { id: true } });
         if (!account) throw new BadRequestException('That account is no longer connected.');
       }
       data.accountId = body.accountId || null;

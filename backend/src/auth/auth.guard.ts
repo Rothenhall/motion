@@ -39,9 +39,12 @@ export class AuthGuard implements CanActivate {
 
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, email: true, role: true, status: true, clientId: true, client: { select: { status: true } } },
+      select: { id: true, email: true, role: true, status: true, clientId: true, sessionVersion: true, client: { select: { status: true } } },
     });
     if (!user) throw new UnauthorizedException('Sign in to continue.');
+    // A password reset or a disabled account bumps the version, which ends every session issued before it. Sessions from
+    // before versions existed carry none, and count as version 0.
+    if ((typeof payload.sv === 'number' ? payload.sv : 0) !== user.sessionVersion) throw new UnauthorizedException('Sign in to continue.');
     if (user.status === 'DISABLED') throw new UnauthorizedException('This account has been disabled.');
     if (user.status === 'INVITED') throw new UnauthorizedException('Finish setting up your account from your invitation first.');
 
