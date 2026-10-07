@@ -308,4 +308,213 @@ describe('Hardening', () => {
       expect(existsSync(join(UPLOAD_DIR, name))).toBe(true);
     });
   });
+
+  // ---------------------------------------------------------------- security review evidence (docs/security-review.md)
+
+  describe('security', () => {
+    const PASSWORD = 'password123';
+    const b64 = (v: unknown) => Buffer.from(JSON.stringify(v)).toString('base64url');
+    const tokenOf = (url: string) => new URL(url).searchParams.get('token') as string;
+    const sha256 = (v: string) => require('crypto').createHash('sha256').update(v).digest('hex') as string;
+
+    it('refuses forged, tampered, expired and wrong-purpose tokens', async () => {
+      const good = signToken(A.user.id, 'session', 3600);
+      await http().get('/auth/me').set(bearer(good)).expect(200);
+      const [h, p, s] = good.split('.');
+      const asAdmin = b64({ sub: admin.user.id, typ: 'session', iat: 1, exp: 9_999_999_999 });
+      const none = `${b64({ alg: 'none', typ: 'JWT' })}.${asAdmin}.`;
+      const cases = [
+        none, // alg "none"
+        `${h}.${asAdmin}.${s}`, // another user's claims under this signature
+        `${h}.${p}.${s.slice(0, -2)}xx`, // damaged signature
+        signToken(A.user.id, 'session', -10), // expired
+        signToken(A.user.id, 'oauth_state', 600, { provider: 'instagram', clientId: A.client.id }), // a connect-link token is not a session
+        signToken('no-such-user', 'session', 3600),
+        'garbage', '', 'a.b.c',
+      ];
+      for (const token of cases) await http().get('/auth/me').set(token ? bearer(token) : {}).expect(401);
+      // A session token is not accepted as an OAuth state either: the callback sends the visitor away with an error and connects nothing.
+      const before = await prisma.socialAccount.count({ where: { clientId: A.client.id } });
+      const res = await http().get('/auth/instagram/callback').query({ code: 'x', state: good }).expect(302);
+      expect(res.headers.location).toContain('/connect?error=');
+      expect(await prisma.socialAccount.count({ where: { clientId: A.client.id } })).toBe(before);
+    });
+
+    it('answers every failed sign-in the same way: unknown, wrong password, invited, disabled, locked', async () => {
+      const mk = async (tag: string, data: Record<string, unknown>) => {
+        const u = await prisma.user.create({ data: { email: `hardening-login-${tag}@example.com`, passwordHash: await hashPassword(PASSWORD), clientId: A.client.id, role: Role.CLIENT_MEMBER, ...data } as any });
+        made.users.push(u.id);
+        return u.email;
+      };
+      const emails = [
+        'hardening-login-nobody@example.com',
+        await mk('active', {}),
+        await mk('invited', { status: 'INVITED', passwordHash: '!no-password-yet' }),
+        await mk('disabled', { status: 'DISABLED' }),
+        await mk('locked', { lockedUntil: new Date(Date.now() + 600_000) }),
+      ];
+      const bodies = [];
+      for (const email of emails) bodies.push((await http().post('/auth/login').send({ email, password: email.includes('active') ? 'wrong-password' : PASSWORD }).expect(401)).body);
+      for (const body of bodies) expect(body).toEqual(bodies[0]);
+    });
+
+    it('invite and reset links are 32 random bytes, stored only as a hash, and never logged or put in the audit log', async () => {
+      const { Logger } = require('@nestjs/common');
+      const spies = ['log', 'warn', 'error', 'debug', 'verbose'].map((m) => jest.spyOn(Logger.prototype, m).mockImplementation(() => undefined));
+      const out = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+      try {
+        const created = await http().post('/admin/clients').set(bearer(admin.token)).send({ name: 'Hardening Links Co', pocEmail: 'hardening-links@example.com' }).expect(201);
+        made.clients.push(created.body.client.id);
+        const user = await prisma.user.findUniqueOrThrow({ where: { email: 'hardening-links@example.com' } });
+        made.users.push(user.id);
+        const invite = tokenOf(created.body.invite.url);
+        expect(Buffer.from(invite, 'base64url').length).toBe(32);
+        await http().post('/auth/accept-invite').send({ token: invite, password: PASSWORD }).expect(200);
+        const reset = tokenOf((await http().post(`/admin/users/${user.id}/reset-link`).set(bearer(admin.token)).expect(200)).body.reset.url);
+        await http().post('/auth/reset-password').send({ token: reset, password: 'another-password-1' }).expect(200);
+        await http().post('/auth/login').send({ email: 'hardening-links@example.com', password: 'wrong' }).expect(401);
+
+        const rows = await prisma.authToken.findMany({ where: { userId: user.id } });
+        expect(rows.map((r) => r.tokenHash).sort()).toEqual([sha256(invite), sha256(reset)].sort());
+        expect(JSON.stringify(rows)).not.toContain(invite);
+        const audit = JSON.stringify(await prisma.adminAuditLog.findMany({ where: { clientId: created.body.client.id } }));
+        expect(audit).not.toContain(invite);
+        expect(audit).not.toContain(reset);
+        expect(audit).not.toContain('accept-invite');
+        const logged = JSON.stringify([...spies.flatMap((s) => s.mock.calls), ...out.mock.calls]);
+        for (const secret of [invite, reset, 'accept-invite?token', PASSWORD, 'another-password-1']) expect(logged).not.toContain(secret);
+        await prisma.adminAuditLog.deleteMany({ where: { clientId: created.body.client.id } });
+      } finally {
+        [...spies, out].forEach((s) => s.mockRestore());
+      }
+    });
+
+    it('never returns password hashes', async () => {
+      for (const res of [await http().get('/auth/me').set(bearer(A.token)), await http().get('/team/members').set(bearer(A.token)), await http().get(`/admin/clients/${A.client.id}/users`).set(bearer(admin.token))]) {
+        expect(res.status).toBe(200);
+        expect(JSON.stringify(res.body)).not.toMatch(/scrypt|passwordHash|accessToken|enc:v1/);
+      }
+      expect(JSON.stringify((await http().get('/accounts').set(bearer(A.token))).body)).not.toMatch(/accessToken|enc:v1/);
+    });
+
+    it('rate limits the public invite, reset and sign-up routes', async () => {
+      process.env.RATE_LIMIT = 'on';
+      try {
+        for (const route of ['/auth/accept-invite/validate', '/auth/reset-password/validate', '/auth/accept-invite', '/auth/reset-password', '/auth/register']) {
+          let last = 0;
+          for (let i = 0; i < 12; i++) last = (await http().post(route).send({ token: 'nope', password: 'password123', email: 'x@example.com' })).status;
+          expect([route, last]).toEqual([route, 429]);
+        }
+      } finally {
+        process.env.RATE_LIMIT = 'off';
+      }
+    });
+
+    it('errors carry a short message and nothing about the server', async () => {
+      const probes = [
+        await http().get('/no/such/route').set(bearer(A.token)),
+        await http().post('/drafts').set(bearer(A.token)).set('Content-Type', 'application/json').send('{"caption": '),
+        await http().get('/posts/ ../../etc/passwd').set(bearer(A.token)),
+        await http().patch('/drafts/not-a-real-id').set(bearer(A.token)).send({}),
+        await http().get('/auth/me'),
+      ];
+      for (const res of probes) {
+        expect(res.status).toBeGreaterThanOrEqual(400);
+        expect(res.status).toBeLessThan(500);
+        const text = JSON.stringify(res.body) + JSON.stringify(res.headers);
+        expect(text).not.toMatch(/node_modules|\.ts:\d|\bat \w+.*\(|prisma|postgres|stack|C:\\\\|\/app\/|express/i);
+      }
+    });
+
+    it('turns away a large JSON body', async () => {
+      const big = { caption: 'x'.repeat(300_000) };
+      await http().post('/drafts').set(bearer(A.token)).send(big).expect(413);
+      await http().post('/auth/login').send({ email: 'a@example.com', password: 'y'.repeat(300_000) }).expect(413);
+    });
+
+    it('treats X-Client-Id the same wherever it points', async () => {
+      // A client user may never send it: 403 whether the id is theirs, someone else's, made up, or hostile.
+      const bodies = [];
+      for (const id of [A.client.id, B.client.id, 'made-up', "x' OR '1'='1", 'a'.repeat(5000)]) {
+        const res = await http().get('/posts').set(bearer(A.token, { 'X-Client-Id': id })).expect(403);
+        bodies.push(res.body);
+      }
+      for (const b of bodies) expect(b).toEqual(bodies[0]);
+      await http().get('/posts').set(bearer(A.token, { 'X-Client-Id': '   ' })).expect(200); // blank counts as absent
+      // Staff: a client that does not exist, is hostile, or is archived all look alike.
+      const archived = await prisma.client.create({ data: { name: 'Hardening archived', archivedAt: new Date() } });
+      made.clients.push(archived.id);
+      const answers = [];
+      for (const id of ['made-up', "x' OR '1'='1", archived.id, 'a'.repeat(5000)]) answers.push((await http().get('/posts').set(bearer(admin.token, { 'X-Client-Id': id })).expect(404)).body);
+      for (const b of answers) expect(b).toEqual(answers[0]);
+      // And a real client works, listing only that client.
+      expect((await http().get('/posts').set(bearer(admin.token, { 'X-Client-Id': B.client.id })).expect(200)).body.every((p: any) => p.account.id === B.account.id)).toBe(true);
+    });
+
+    it('another client\'s ids are indistinguishable from ids that do not exist', async () => {
+      const draft = await prisma.postDraft.create({ data: { userId: A.user.id, clientId: A.client.id, caption: 'A only' } });
+      const check = await prisma.contentCheck.create({ data: { userId: A.user.id, clientId: A.client.id, kind: 'TEXT', platform: 'instagram', text: 't', status: 'DONE' } });
+      const idea = await prisma.contentIdea.create({ data: { userId: A.user.id, clientId: A.client.id, title: 'A idea', hook: 'h', format: 'REEL', platform: 'instagram' } });
+      const hook = await prisma.hook.create({ data: { userId: A.user.id, clientId: A.client.id, text: 'A hook', category: 'CURIOSITY', source: 'CUSTOM' } });
+      const rule = await prisma.automationRule.create({ data: { accountId: A.account.id, name: 'A rule', keyword: 'k' } });
+      const post = await prisma.scheduledPost.create({ data: { accountId: A.account.id, platform: 'instagram', mediaType: 'IMAGE', mediaUrls: '[]', scheduledAt: new Date(Date.now() + 86_400_000) } });
+      const probes: [string, string, string, string, object?][] = [
+        ['get', `/preflight/${check.id}`, '/preflight/nope-nope', 'check'], ['get', `/preflight/${check.id}/brain`, '/preflight/nope-nope/brain', 'brain'],
+        ['delete', `/preflight/${check.id}`, '/preflight/nope-nope', 'del-check'], ['patch', `/drafts/${draft.id}`, '/drafts/nope-nope', 'draft', {}],
+        ['delete', `/drafts/${draft.id}`, '/drafts/nope-nope', 'del-draft'], ['patch', `/ideas/${idea.id}`, '/ideas/nope-nope', 'idea', { status: 'SAVED' }],
+        ['delete', `/ideas/${idea.id}`, '/ideas/nope-nope', 'del-idea'], ['patch', `/hooks/${hook.id}/favorite`, '/hooks/nope-nope/favorite', 'hook'],
+        ['patch', `/posts/${post.id}`, '/posts/nope-nope', 'post', { caption: 'x' }], ['delete', `/posts/${post.id}`, '/posts/nope-nope', 'del-post'],
+        ['delete', `/automations/${rule.id}`, '/automations/nope-nope', 'del-rule'],
+      ];
+      try {
+        for (const [method, theirs, nothing, label, body] of probes) {
+          const t = await (http() as any)[method](theirs).set(bearer(B.token)).send(body ?? {});
+          const n = await (http() as any)[method](nothing).set(bearer(B.token)).send(body ?? {});
+          expect([label, t.status, t.body.message]).toEqual([label, n.status, n.body.message]); // 404, or the same quiet 204 a delete of a missing id gives
+        }
+        // Nothing of A's was touched by any of those.
+        expect(await prisma.contentCheck.count({ where: { id: check.id } })).toBe(1);
+        expect(await prisma.postDraft.count({ where: { id: draft.id } })).toBe(1);
+        expect(await prisma.contentIdea.findUniqueOrThrow({ where: { id: idea.id } })).toMatchObject({ status: 'NEW' });
+        expect(await prisma.scheduledPost.count({ where: { id: post.id } })).toBe(1);
+        expect(await prisma.automationRule.count({ where: { id: rule.id } })).toBe(1);
+        expect(await prisma.hook.findUniqueOrThrow({ where: { id: hook.id } })).toMatchObject({ isFavorite: false });
+      } finally {
+        await prisma.automationRule.delete({ where: { id: rule.id } }).catch(() => undefined);
+        await prisma.scheduledPost.deleteMany({ where: { id: post.id } });
+        await prisma.contentIdea.deleteMany({ where: { id: idea.id } });
+        await prisma.hook.deleteMany({ where: { id: hook.id } });
+      }
+    });
+
+    it('ignores any client or user id sent in a request body', async () => {
+      const draft = (await http().post('/drafts').set(bearer(A.token)).send({ caption: 'x', clientId: B.client.id, userId: B.user.id })).body;
+      expect(draft).toMatchObject({ clientId: A.client.id, userId: A.user.id });
+      const post = (await http().post('/posts').set(bearer(A.token)).send({ accountId: A.account.id, platform: 'instagram', mediaUrls: [], scheduledAt: soon(), clientId: B.client.id, createdById: B.user.id, status: 'PUBLISHED' }).expect(201)).body;
+      expect(post).toMatchObject({ createdById: A.user.id, status: 'SCHEDULED' });
+      const asClient = await http().put('/brand-profile').set(bearer(A.token)).send({ niche: 'Hardening niche', clientId: B.client.id, userId: B.user.id }).expect(200);
+      expect(asClient.body.clientId).toBe(A.client.id);
+      expect(await prisma.brandProfile.count({ where: { clientId: B.client.id } })).toBe(0);
+      await prisma.brandProfile.deleteMany({ where: { clientId: A.client.id } });
+      await prisma.scheduledPost.deleteMany({ where: { id: post.id } });
+    });
+
+    it('CORS: a browser at the web app\'s address may send the act-as headers, and other addresses get nothing', async () => {
+      // main.ts calls app.enableCors({ origin: FRONTEND_URL.split(',') }); this runs the same call on a bare app.
+      const bare = (await Test.createTestingModule({}).compile()).createNestApplication();
+      bare.enableCors({ origin: ['http://localhost:3000'] });
+      await bare.init();
+      try {
+        const asked = 'authorization,content-type,x-client-id,x-preview-mode';
+        const ok = await request(bare.getHttpServer()).options('/anything').set('Origin', 'http://localhost:3000').set('Access-Control-Request-Method', 'POST').set('Access-Control-Request-Headers', asked);
+        expect(ok.headers['access-control-allow-origin']).toBe('http://localhost:3000');
+        expect(ok.headers['access-control-allow-headers']).toContain('x-client-id');
+        expect(ok.headers['access-control-allow-headers']).toContain('x-preview-mode');
+        const evil = await request(bare.getHttpServer()).options('/anything').set('Origin', 'https://evil.example').set('Access-Control-Request-Method', 'POST').set('Access-Control-Request-Headers', asked);
+        expect(evil.headers['access-control-allow-origin']).toBeUndefined();
+      } finally {
+        await bare.close();
+      }
+    });
+  });
 });
