@@ -157,18 +157,14 @@ a { color: inherit; text-decoration: none; }
 .brand-name, .mobile-brand span {
   font-family: var(--font-display); font-size: 20px; font-weight: 725; letter-spacing: -.05em;
 }
+/* Brand mark: the Rothenhall wave-and-dot logo (public/brand/motion-mark.png), painted in the ink colour so it follows light and dark themes. */
 .brand-mark {
-  width: 30px; height: 30px; display: grid; place-items: center;
-  border-radius: 9px; position: relative; overflow: hidden; flex: 0 0 30px;
-  background: linear-gradient(145deg, #8b7bff 0%, #5b50e6 55%, #3730a3 100%);
-  box-shadow: 0 6px 16px rgba(99, 102, 241, .4);
+  width: 34px; height: 16px; flex: 0 0 34px; display: block;
+  background: var(--text-1);
+  -webkit-mask: url('/brand/motion-mark.png') center / contain no-repeat;
+  mask: url('/brand/motion-mark.png') center / contain no-repeat;
 }
-.brand-mark::before, .brand-mark::after, .brand-mark span {
-  content: ''; position: absolute; height: 3px; border-radius: 2px; background: var(--surface); transform: rotate(-42deg);
-}
-.brand-mark::before { width: 19px; top: 10px; left: 5px; opacity: .98; }
-.brand-mark::after { width: 13px; top: 15px; left: 9px; opacity: .72; }
-.brand-mark span { width: 8px; top: 19px; left: 12px; opacity: .45; }
+.brand-mark span { display: none; }
 .brand-beta {
   padding: 2px 6px; border-radius: 5px; border: 1px solid rgba(255,255,255,.16);
   color: #a5b0c5; font-size: 10.5px; font-weight: 725; letter-spacing: .1em;
@@ -900,11 +896,6 @@ h1, h2, h3, .card-title { letter-spacing: -.01em; }
 .eyebrow { font-weight: 525; letter-spacing: .08em; }
 .field-label, .nav-label, .weekday { font-weight: 525; }
 
-/* Brand mark: ink tile, three folding planes */
-.brand-mark { background: linear-gradient(145deg, #4a4c51 0%, #313337 55%, #26282b 100%); box-shadow: 0 4px 12px rgba(49, 51, 55, .22); }
-.brand-mark::before, .brand-mark::after, .brand-mark span { background: #fefefe; }
-[data-theme="dark"] .brand-mark { background: linear-gradient(145deg, #f4f4f5, #cfd0d3); box-shadow: none; }
-[data-theme="dark"] .brand-mark::before, [data-theme="dark"] .brand-mark::after, [data-theme="dark"] .brand-mark span { background: #26282b; }
 
 /* Sidebar: light Graphite surface with a hairline edge (follows dark mode through tokens) */
 .sidebar { background: var(--surface); color: var(--text-1); border-right: 1px solid var(--border); }
