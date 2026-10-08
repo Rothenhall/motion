@@ -9,8 +9,12 @@ import Insight from '../../components/studio/Insight';
 import PostDrawer from '../../components/studio/PostDrawer';
 import Thumb from '../../components/studio/Thumb';
 import { api } from '../../lib/api';
-import { errorText, formatName, platformName, statusName } from '../../lib/format';
-import { addDays, dayKey, fmtTime, needsMedia, postPlatform, reschedule, startOfDay, startOfWeek, type Post } from '../../lib/posts';
+import { useCan } from '../../lib/session';
+import { errorText, formatName, platformName } from '../../lib/format';
+import { ApprovalBadge } from '../../components/approvals/ApprovalBadge';
+import { approvalView } from '../../lib/approvals';
+import '../../components/approvals/approvals.css';
+import { addDays, dayKey, fmtTime, needsMedia, postPlatform, postStatusLabel, reschedule, startOfDay, startOfWeek, type Post } from '../../lib/posts';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 type View = 'week' | 'month';
@@ -32,6 +36,7 @@ const weekdayShort = new Intl.DateTimeFormat(undefined, { weekday: 'short' });
 const dayLong = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
 
 export default function Planner() {
+  const canCompose = useCan('compose'); // creating, moving and editing posts
   const [posts, setPosts] = useState<Post[]>([]);
   const [stats, setStats] = useState<PostStat[]>([]);
   const [loading, setLoading] = useState(true);
@@ -111,7 +116,7 @@ export default function Planner() {
   const drop = async (day: Date, partId?: string) => {
     const post = posts.find((p) => p.id === dragId);
     setDragId(null); setOverKey(null);
-    if (!post || post.status !== 'SCHEDULED') return;
+    if (!post || post.status !== 'SCHEDULED' || !canCompose) return;
     const from = new Date(post.scheduledAt);
     const part = partId ? PARTS.find((p) => p.id === partId)! : null;
     const target = new Date(day.getFullYear(), day.getMonth(), day.getDate(), from.getHours(), from.getMinutes());
@@ -131,7 +136,7 @@ export default function Planner() {
   // Feed preview: the Instagram profile as it will look, with scheduled posts outlined.
   const feed = useMemo(() => {
     const ig = posts.filter((p) => postPlatform(p) === 'instagram' && p.status !== 'FAILED');
-    const sched = ig.filter((p) => p.status === 'SCHEDULED').sort((a, b) => +new Date(b.scheduledAt) - +new Date(a.scheduledAt));
+    const sched = ig.filter((p) => p.status === 'SCHEDULED' || p.status === 'PENDING_APPROVAL').sort((a, b) => +new Date(b.scheduledAt) - +new Date(a.scheduledAt));
     const done = ig.filter((p) => p.status === 'PUBLISHED').sort((a, b) => +new Date(b.scheduledAt) - +new Date(a.scheduledAt));
     return [...sched, ...done].slice(0, 12);
   }, [posts]);
@@ -146,7 +151,7 @@ export default function Planner() {
     <section className="page-intro">
       <div><div className="eyebrow">Publishing calendar</div><h1>Content planner</h1><p>Every scheduled post across your channels. Drag a post to another day to reschedule it.</p></div>
       <div className="page-intro-actions">
-        <Link className="btn" href="/?compose=true"><Icon name="plus" size={16} /> Create post</Link>
+        {canCompose && <Link className="btn" href="/?compose=true"><Icon name="plus" size={16} /> Create post</Link>}
       </div>
     </section>
 
@@ -207,8 +212,8 @@ export default function Planner() {
                         onDrop={(e) => { e.preventDefault(); drop(day, part.id); }}
                       >
                         {loading && !items.length && part.id === 'morning' && <div className="skeleton" style={{ height: 44 }} aria-hidden="true" />}
-                        {items.map((p) => <EventCard key={p.id} post={p} dragging={dragId === p.id} onOpen={() => setOpen(p)} onDragStart={() => setDragId(p.id)} onDragEnd={() => { setDragId(null); setOverKey(null); }} />)}
-                        {!loading && !past && items.length === 0 && (
+                        {items.map((p) => <EventCard key={p.id} post={p} canMove={canCompose} dragging={dragId === p.id} onOpen={() => setOpen(p)} onDragStart={() => setDragId(p.id)} onDragEnd={() => { setDragId(null); setOverKey(null); }} />)}
+                        {!loading && !past && canCompose && items.length === 0 && (
                           <Link className="pl-add" href={`/?compose=true&date=${key}`} aria-label={`Schedule a post on ${dayLong.format(day)}, ${part.label.toLowerCase()}`}><Icon name="plus" size={12} /></Link>
                         )}
                       </div>
@@ -236,13 +241,13 @@ export default function Planner() {
                     <div className="day-number"><span className="sr-only">{dayLong.format(day)}{key === todayKey ? ', today' : ''}, </span><span aria-hidden="true">{day.getDate()}</span><span className="sr-only">{items.length ? `${items.length} post${items.length === 1 ? '' : 's'}` : 'nothing scheduled'}</span></div>
                     <div className="pl-minis">
                       {items.slice(0, 4).map((p) => (
-                        <button key={p.id} type="button" className="pl-mini" draggable={p.status === 'SCHEDULED'} onDragStart={() => setDragId(p.id)} onDragEnd={() => { setDragId(null); setOverKey(null); }} onClick={() => setOpen(p)} aria-label={`${p.caption || formatName(p.mediaType)}, ${fmtTime(p.scheduledAt)}, ${statusName(p.status)}`}>
+                        <button key={p.id} type="button" className={`pl-mini ${apClass(p)}`} draggable={p.status === 'SCHEDULED' && canCompose} onDragStart={() => setDragId(p.id)} onDragEnd={() => { setDragId(null); setOverKey(null); }} onClick={() => setOpen(p)} aria-label={`${p.caption || formatName(p.mediaType)}, ${fmtTime(p.scheduledAt)}, ${postStatusLabel(p)}`}>
                           <Thumb id={p.id} media={p.mediaUrls} mediaType={p.mediaType} caption={p.caption} ratio="1 / 1" />
                         </button>
                       ))}
                     </div>
                     {items.length > 4 && <span className="more-events">+{items.length - 4} more</span>}
-                    {!loading && !past && items.length === 0 && <Link className="day-add" href={`/?compose=true&date=${key}`} aria-label={`Schedule a post on ${dayLong.format(day)}`}><Icon name="plus" size={13} /><span>Add</span></Link>}
+                    {!loading && !past && canCompose && items.length === 0 && <Link className="day-add" href={`/?compose=true&date=${key}`} aria-label={`Schedule a post on ${dayLong.format(day)}`}><Icon name="plus" size={13} /><span>Add</span></Link>}
                   </div>
                 );
               })}
@@ -256,9 +261,9 @@ export default function Planner() {
         <div className="pl-feed-top"><h2 id="feed-t" className="ov-eyebrow">Feed preview</h2><span className="st-chip"><Icon name="instagram" size={11} /> Instagram</span></div>
         {feed.length ? (
           <>
-            <div className="pl-prof"><span className="st-phone-av" /><div><b>{feedAccount || 'Your account'}</b><span className="muted">{feed.filter((p) => p.status === 'SCHEDULED').length} scheduled · outlined</span></div></div>
+            <div className="pl-prof"><span className="st-phone-av" /><div><b>{feedAccount || 'Your account'}</b><span className="muted">{feed.filter((p) => p.status === 'SCHEDULED').length} scheduled · outlined{feed.some((p) => p.status === 'PENDING_APPROVAL') ? ` · ${feed.filter((p) => p.status === 'PENDING_APPROVAL').length} awaiting approval (dashed)` : ''}</span></div></div>
             <div className="pl-grid">
-              {feed.map((p) => <button key={p.id} type="button" className={`pl-feed-item ${p.status === 'SCHEDULED' ? 'new' : ''}`} onClick={() => setOpen(p)} aria-label={`${p.caption || formatName(p.mediaType)}, ${statusName(p.status)}`}><Thumb id={p.id} media={p.mediaUrls} mediaType={p.mediaType} caption={p.caption} ratio="4 / 5" className="pl-feed-thumb" /></button>)}
+              {feed.map((p) => <button key={p.id} type="button" className={`pl-feed-item ${p.status === 'SCHEDULED' ? 'new' : ''} ${apClass(p)}`} onClick={() => setOpen(p)} aria-label={`${p.caption || formatName(p.mediaType)}, ${postStatusLabel(p)}`}><Thumb id={p.id} media={p.mediaUrls} mediaType={p.mediaType} caption={p.caption} ratio="4 / 5" className="pl-feed-thumb" /></button>)}
             </div>
             <p className="pl-feed-note">Newest first. Outlined posts are still scheduled.</p>
           </>
@@ -279,27 +284,30 @@ export default function Planner() {
                   <td><div className="table-main"><Thumb id={post.id} media={post.mediaUrls} mediaType={post.mediaType} caption={post.caption} className="pl-qthumb" /><div><strong>{post.caption || `${formatName(post.mediaType)} post`}</strong><span>{formatName(post.mediaType)}</span></div></div></td>
                   <td className="table-secondary">{platformName(platform)}{post.account?.name ? ` · ${post.account.name}` : ''}</td>
                   <td className="table-secondary">{new Date(post.scheduledAt).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</td>
-                  <td><span className={`status-pill status-${post.status.toLowerCase()}`}>{statusName(post.status)}</span></td>
+                  <td>{approvalView(post) ? <ApprovalBadge post={post} /> : <span className={`status-pill status-${post.status.toLowerCase()}`}>{postStatusLabel(post)}</span>}</td>
                 </tr>
               );
             })}
           </tbody>
         </table>
         {loading && <div className="empty-state" aria-busy="true">Loading your queue…</div>}
-        {!loading && upcoming.length === 0 && <div className="empty-state"><div className="empty-icon"><Icon name="send" size={18} /></div><strong>Nothing scheduled{filter !== 'all' ? ` for ${platformName(filter)}` : ''}</strong>Your next post will appear here.<br /><Link className="card-action" href="/?compose=true">Schedule a post <Icon name="arrow-right" size={13} /></Link></div>}
+        {!loading && upcoming.length === 0 && <div className="empty-state"><div className="empty-icon"><Icon name="send" size={18} /></div><strong>Nothing scheduled{filter !== 'all' ? ` for ${platformName(filter)}` : ''}</strong>Your next post will appear here.{canCompose && <><br /><Link className="card-action" href="/?compose=true">Schedule a post <Icon name="arrow-right" size={13} /></Link></>}</div>}
       </div>
     </section>
   </div>;
 }
 
-function EventCard({ post, dragging, onOpen, onDragStart, onDragEnd }: { post: Post; dragging: boolean; onOpen: () => void; onDragStart: () => void; onDragEnd: () => void }) {
+/** Class that marks awaiting, changes-requested and approved posts apart from plain scheduled ones. */
+const apClass = (post: Post) => { const v = approvalView(post); return v ? `ap-${v}` : ''; };
+
+function EventCard({ post, canMove, dragging, onOpen, onDragStart, onDragEnd }: { post: Post; canMove: boolean; dragging: boolean; onOpen: () => void; onDragStart: () => void; onDragEnd: () => void }) {
   const platform = postPlatform(post);
-  const movable = post.status === 'SCHEDULED';
+  const movable = post.status === 'SCHEDULED' && canMove;
   const warn = post.status === 'FAILED' || needsMedia(post);
   return (
     <button
       type="button"
-      className={`pl-ev ${platform} ${dragging ? 'dragging' : ''} ${warn ? 'warn' : ''} ${movable ? 'movable' : ''}`}
+      className={`pl-ev ${platform} ${apClass(post)} ${dragging ? 'dragging' : ''} ${warn ? 'warn' : ''} ${movable ? 'movable' : ''}`}
       draggable={movable}
       onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', post.id); onDragStart(); }}
       onDragEnd={onDragEnd}
@@ -307,7 +315,7 @@ function EventCard({ post, dragging, onOpen, onDragStart, onDragEnd }: { post: P
       title={`${post.caption || formatName(post.mediaType)} · ${platformName(platform)} · ${fmtTime(post.scheduledAt)}`}
     >
       <Thumb id={post.id} media={post.mediaUrls} mediaType={post.mediaType} caption={post.caption} className="pl-ev-thumb" />
-      <span className="pl-ev-copy"><strong>{post.caption || `${formatName(post.mediaType)} post`}</strong><span>{fmtTime(post.scheduledAt)} · {warn ? (post.status === 'FAILED' ? 'Failed' : 'Needs media') : statusName(post.status)}</span></span>
+      <span className="pl-ev-copy"><strong>{post.caption || `${formatName(post.mediaType)} post`}</strong><span>{fmtTime(post.scheduledAt)} · {warn ? (post.status === 'FAILED' ? 'Failed' : 'Needs media') : postStatusLabel(post)}</span></span>
     </button>
   );
 }

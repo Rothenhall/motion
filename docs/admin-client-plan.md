@@ -76,6 +76,39 @@ Not in Phase 2: the frontend (login page still offers "create account", Connect 
 admin console, acting-client switcher or preview bar yet), approvals, and email delivery of links. **Before deploying**, set
 `ADMIN_EMAILS` (only staff can connect channels now), take a database dump, and note that sign-up is closed.
 
+## Phases 3 to 5 status (console, approvals, hardening): done
+
+Built by five parallel streams in separate branches and merged on `feat/multi-client-phase3-5`. Checks on the merged code: backend 301
+passing (only the seven ffmpeg pre-flight tests fail on the author's machine), frontend 170 passing, type check, lint and production
+build clean. The approvals flow was also run end to end on the real backend and in the browser, and the new approvals migration was
+rehearsed on a copy of the real development database (counts identical, existing posts untouched, indexes created).
+
+- **Phase 3 (client shell and admin console).** The app now runs off one session (`/auth/me`): the menu follows the client's switches,
+  a switched-off section shows a "not switched on" screen even by typed address, action switches hide or disable the matching
+  buttons, and a paused workspace sees a paused screen. Clients see a read-only Channels page and no connect buttons. Staff land on
+  `/admin` (overview, clients, a client's Channels, Features, Team, Approvals and Activity tabs) and can preview any client, read only or
+  with admin controls, behind a bar that shows the mode. Sign-up is gone from the login page; `/accept-invite` and `/reset-password` finish
+  the link flows. After a channel connects, staff return to that client's Channels tab. Calls to `/admin/*` never carry preview headers,
+  so a read-only preview cannot block staff actions.
+- **Phase 4 (approvals).** `Client.requireApproval`: a client user's post waits as `PENDING_APPROVAL` until staff approve it (a past due time
+  needs a new one) or ask for changes with a note; the client edits and resubmits, and editing an approved post sends it back. Staff
+  posts are never held. Clients cannot set `status` or `approvalStatus` through any body, a second approval is refused (409), two
+  staff approving at once give one winner, and the scheduler never publishes a held post. Audit entries for every step and a count in
+  the menu. Known gap: if a client edits a pending post at the very moment staff approve it, the approval covers the new text; closing it
+  needs a version field in the approve call.
+- **Phase 5 (hardening).** Media ownership was audited and tested for every route that takes a file; fixes: uploads now take their
+  extension and first-bytes check from the real type (not the visitor's file name), and a percent-encoded or oddly written file URL can no
+  longer skip the "belongs to another client" check. `docs/security-review.md` lists 38 items verified, 6 fixed and the open gaps;
+  `docs/runbook.md` covers deploying, onboarding, daily tasks, backups and troubleshooting by error code; the demo seed has more clients
+  (restricted, suspended, invited and disabled people, an activity log); CI gains a backend build and a migration drift check. In the
+  merge: `multer` is pinned to 2.4 (the copy bundled with platform-express had denial of service advisories) and `FRONTEND_URL` is read in
+  one place (several origins work, links use the first, an unset value no longer opens CORS to every origin).
+
+Still open (see the security review for the rest): `POST /team/invite` tells a client contact whether an email has an account anywhere;
+no per-request log line with client and actor; `ALLOW_SIGNUP=true` must never be set on a real install (anyone could register a
+staff address from `ADMIN_EMAILS`). A "Creators" menu entry and a `creators` switch are being built in a separate session and are not
+part of this branch.
+
 ## 1. What we copy from Cailyx, and what we change
 
 Verified in Cailyx's code:

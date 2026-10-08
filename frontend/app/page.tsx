@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
+import './dashboard.css';
 import { Icon } from '../components/Icons';
 import Composer from '../components/Composer';
 import AreaChart from '../components/studio/AreaChart';
@@ -14,6 +15,9 @@ import Spark from '../components/studio/Spark';
 import Thumb from '../components/studio/Thumb';
 import { api } from '../lib/api';
 import { parseMedia } from '../lib/media';
+import { canManageChannels } from '../lib/nav';
+import { featureOn, useMe, type FeatureKey } from '../lib/session';
+import { tolerate } from '../lib/widgets';
 import { compactNumber, errorText, formatName, platformFor, platformName } from '../lib/format';
 import { addDays, dayKey, fmtDay, fmtTime, needsMedia, postPlatform, startOfDay, startOfWeek, type Draft, type Post } from '../lib/posts';
 
@@ -42,30 +46,55 @@ export default function Home() {
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [activeDraft, setActiveDraft] = useState<Draft | null>(null);
 
-  const loadDrafts = useCallback(() => { api<Draft[]>('/drafts').then((d) => setDrafts(d || [])).catch(() => setDrafts([])); }, []);
+  // Each widget needs its section switched on. A switch that is off hides the widget; and if the server still says
+  // FEATURE_DISABLED for one request (the switch changed while the page was open), only that widget goes away.
+  const me = useMe();
+  const [blocked, setBlocked] = useState<string[]>([]);
+  const block = useCallback((feature: string | undefined, fallback: FeatureKey) => {
+    const key = feature || fallback;
+    setBlocked((cur) => (cur.includes(key) ? cur : [...cur, key]));
+  }, []);
+  const has = (key: FeatureKey) => featureOn(me, key) && !blocked.includes(key);
+  const plannerOn = has('planner');
+  const analyticsOn = has('analytics');
+  const composeOn = has('compose');
+  const automationsOn = has('automations');
+  const canConnect = canManageChannels(me);
+
+  const loadDrafts = useCallback(() => {
+    if (!composeOn) { setDrafts([]); return; }
+    tolerate(api<Draft[]>('/drafts'), [] as Draft[], (f) => block(f, 'compose')).then((d) => setDrafts(d || [])).catch(() => setDrafts([]));
+  }, [composeOn, block]);
 
   const load = useCallback(async () => {
     setLoadError('');
     try {
-      const [dash, list] = await Promise.all([api<DashboardData>('/dashboard'), api<Post[]>('/posts')]);
+      const [dash, list] = await Promise.all([
+        api<DashboardData>('/dashboard'),
+        plannerOn ? tolerate(api<Post[]>('/posts'), [] as Post[], (f) => block(f, 'planner')) : Promise.resolve([] as Post[]),
+      ]);
       setData(dash); setPosts(list);
     } catch (error) {
       setLoadError(errorText(error, 'Could not load your workspace.'));
     } finally { setLoading(false); }
-    api<Analytics>('/analytics?days=30').then(setAnalytics).catch(() => setAnalytics(null));
+    if (analyticsOn) tolerate(api<Analytics>('/analytics?days=30'), null, (f) => block(f, 'analytics')).then(setAnalytics).catch(() => setAnalytics(null));
+    else setAnalytics(null);
     loadDrafts();
-  }, [loadDrafts]);
+  }, [loadDrafts, plannerOn, analyticsOn, block]);
+
+  useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
-    load();
     // Ideas, hooks and the planner open the composer through ?compose=true&caption=…&date=…
     const params = new URLSearchParams(window.location.search);
     if (params.get('compose') === 'true') {
-      setHandoff({ caption: params.get('caption') || undefined, day: params.get('date'), idea: params.get('idea') || undefined });
-      setComposerOpen(true);
+      if (composeOn) {
+        setHandoff({ caption: params.get('caption') || undefined, day: params.get('date'), idea: params.get('idea') || undefined });
+        setComposerOpen(true);
+      }
       window.history.replaceState(null, '', '/');
     }
-  }, [load]);
+  }, [composeOn]);
 
   const greeting = useMemo(() => {
     const h = new Date().getHours();
@@ -111,9 +140,9 @@ export default function Home() {
       const up = analytics.totals.viewsChange > 0;
       parts.push(<span key="v">Views are <b>{up ? 'up' : 'down'} {Math.abs(analytics.totals.viewsChange)}%</b> on the previous 30 days.</span>);
     }
-    if (!action && !queue.length) action = <button className="st-chip dark" type="button" onClick={() => openComposer()}>Create a post</button>;
+    if (!action && !queue.length && composeOn) action = <button className="st-chip dark" type="button" onClick={() => openComposer()}>Create a post</button>;
     return { parts, action };
-  }, [failed, today, next, missingMedia, queue, analytics]);
+  }, [failed, today, next, missingMedia, queue, analytics, composeOn]);
 
   const week = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(startOfWeek(new Date()), i)), []);
   const weekPosts = (d: Date) => posts.filter((p) => dayKey(new Date(p.scheduledAt)) === dayKey(d));
@@ -131,11 +160,13 @@ export default function Home() {
           <h1>{greeting}</h1>
           <p>Here&apos;s what&apos;s moving across your social channels.</p>
         </div>
-        <div className="page-intro-actions">
-          <button className="btn" type="button" onClick={() => openComposer()} aria-haspopup="dialog">
-            <Icon name="plus" size={16} /> Create post
-          </button>
-        </div>
+        {composeOn && (
+          <div className="page-intro-actions">
+            <button className="btn" type="button" onClick={() => openComposer()} aria-haspopup="dialog">
+              <Icon name="plus" size={16} /> Create post
+            </button>
+          </div>
+        )}
       </section>
 
       {loadError && (
@@ -145,15 +176,17 @@ export default function Home() {
         </div>
       )}
 
-      <Composer open={composerOpen} onOpenChange={(o) => { setComposerOpen(o); if (!o) setActiveDraft(null); }} draft={activeDraft} onDraftChange={loadDrafts} accounts={data.accounts} accountsLoading={loading} initialCaption={handoff.caption} initialDay={handoff.day} initialIdeaId={handoff.idea} onScheduled={load} />
+      {composeOn && <Composer open={composerOpen} onOpenChange={(o) => { setComposerOpen(o); if (!o) setActiveDraft(null); }} draft={activeDraft} onDraftChange={loadDrafts} accounts={data.accounts} accountsLoading={loading} initialCaption={handoff.caption} initialDay={handoff.day} initialIdeaId={handoff.idea} onScheduled={load} />}
       <PostDrawer post={open} onOpenChange={(o) => !o && setOpen(null)} onChanged={load} />
 
-      <section className="ov-brief st-rise" style={{ ['--i' as string]: 1 }} aria-label="Today's brief">
-        {loading ? <div className="skeleton" style={{ height: 22 }} aria-hidden="true" /> : <Insight action={brief.action}>{brief.parts.map((p, i) => <span key={i}>{p} </span>)}</Insight>}
-      </section>
+      {plannerOn && (
+        <section className="ov-brief st-rise" style={{ ['--i' as string]: 1 }} aria-label="Today's brief">
+          {loading ? <div className="skeleton" style={{ height: 22 }} aria-hidden="true" /> : <Insight action={brief.action}>{brief.parts.map((p, i) => <span key={i}>{p} </span>)}</Insight>}
+        </section>
+      )}
 
       <div className="ov-bento">
-        <section className="ov-hero st-rise" style={{ ['--i' as string]: 2 }} aria-labelledby="hero-t">
+        {analyticsOn && <section className={`ov-hero st-rise ${plannerOn ? '' : 'ov-span-all'}`} style={{ ['--i' as string]: 2 }} aria-labelledby="hero-t">
           <div className="ov-hero-top">
             <h2 id="hero-t" className="ov-eyebrow">Views · last 30 days</h2>
             <Link className="ov-hero-link" href="/analytics">Analytics <Icon name="arrow-right" size={12} /></Link>
@@ -170,13 +203,13 @@ export default function Home() {
           ) : (
             <div className="ov-hero-empty">
               <strong>Your trend appears here</strong>
-              <p>{data.accounts.length ? 'Sync your channels from Analytics to pull views and engagement from Meta.' : 'Connect a channel and Motion starts collecting views and engagement.'}</p>
-              <Link className="btn btn-ghost" href={data.accounts.length ? '/analytics' : '/connect'}>{data.accounts.length ? 'Go to analytics' : 'Connect a channel'}</Link>
+              <p>{data.accounts.length ? 'Sync your channels from Analytics to pull views and engagement from Meta.' : canConnect ? 'Connect a channel and Motion starts collecting views and engagement.' : 'Your account manager will connect your channels. Views and engagement appear here after that.'}</p>
+              {(data.accounts.length > 0 || canConnect) && <Link className="btn btn-ghost" href={data.accounts.length ? '/analytics' : '/connect'}>{data.accounts.length ? 'Go to analytics' : 'Connect a channel'}</Link>}
             </div>
           )}
-        </section>
+        </section>}
 
-        <section className="ov-next st-rise" style={{ ['--i' as string]: 3 }} aria-labelledby="next-t">
+        {plannerOn && <section className={`ov-next st-rise ${analyticsOn ? '' : 'ov-span-all'}`} style={{ ['--i' as string]: 3 }} aria-labelledby="next-t">
           <div className="ov-tile-top"><h2 id="next-t" className="ov-eyebrow">Up next</h2>{next && <span className="st-chip">{fmtDay(next.scheduledAt)}</span>}</div>
           {loading ? <div className="skeleton" style={{ height: 220 }} aria-hidden="true" /> : next ? (
             <button type="button" className="ov-next-btn" onClick={() => setOpen(next)} aria-label={`Open details for the post scheduled ${fmtDay(next.scheduledAt)}`}>
@@ -187,26 +220,26 @@ export default function Home() {
             <div className="ov-empty">
               <strong>Your queue is clear</strong>
               <p>Schedule your next idea to keep momentum going.</p>
-              <button className="btn" type="button" onClick={() => openComposer()}>Schedule a post</button>
+              {composeOn && <button className="btn" type="button" onClick={() => openComposer()}>Schedule a post</button>}
             </div>
           )}
-        </section>
+        </section>}
 
-        <Link className="ov-stat st-rise" style={{ ['--i' as string]: 4 }} href="/analytics" aria-label="Engagement rate, open analytics">
+        {analyticsOn && <Link className={`ov-stat st-rise ${plannerOn ? '' : 'ov-span-all'}`} style={{ ['--i' as string]: 4 }} href="/analytics" aria-label="Engagement rate, open analytics">
           <div className="ov-tile-top"><span className="ov-eyebrow">Engagement rate</span>{analytics?.totals.engagementRateChange != null && <span className={`st-chip ${analytics.totals.engagementRateChange >= 0 ? 'good' : 'warn'}`}>{analytics.totals.engagementRateChange >= 0 ? '+' : ''}{analytics.totals.engagementRateChange} pts</span>}</div>
           <div className="ov-stat-num">{loading ? '…' : hasInsights && analytics!.totals.engagementRate != null ? `${analytics!.totals.engagementRate}%` : 'n/a'}</div>
           <Spark values={rateSeries} />
           <p className="ov-stat-note">{hasInsights ? 'Engagements per view, last 30 days.' : 'Sync insights to see this.'}</p>
-        </Link>
+        </Link>}
 
-        <Link className="ov-stat st-rise" style={{ ['--i' as string]: 5 }} href="/planner" aria-label="Queue health, open planner">
+        {plannerOn && <Link className={`ov-stat st-rise ${analyticsOn ? '' : 'ov-span-all'}`} style={{ ['--i' as string]: 5 }} href="/planner" aria-label="Queue health, open planner">
           <div className="ov-tile-top"><span className="ov-eyebrow">Queue</span>{failed.length > 0 ? <span className="st-chip bad">{failed.length} failed</span> : missingMedia.length > 0 ? <span className="st-chip warn">{missingMedia.length} need media</span> : <span className="st-chip good">healthy</span>}</div>
           <div className="ov-stat-num">{loading ? '…' : queue.length}<small>scheduled</small></div>
           <div className="ov-cover" aria-hidden="true">{week.map((d) => <i key={dayKey(d)} className={weekPosts(d).length ? 'on' : d < startOfDay(new Date()) ? 'past' : ''} />)}</div>
           <p className="ov-stat-note">{daysLeft ? `${covered} of ${daysLeft} days left this week have a post.` : 'Week complete.'} {data.stats.published} published this month.</p>
-        </Link>
+        </Link>}
 
-        <section className="ov-week st-rise" style={{ ['--i' as string]: 6 }} aria-labelledby="week-t">
+        {plannerOn && <section className="ov-week st-rise" style={{ ['--i' as string]: 6 }} aria-labelledby="week-t">
           <div className="ov-tile-top"><h2 id="week-t" className="ov-eyebrow">This week</h2><Link className="card-action" href="/planner">Open planner <Icon name="arrow-right" size={13} /></Link></div>
           <div className="ov-days">
             {week.map((d) => {
@@ -221,14 +254,14 @@ export default function Home() {
                     </button>
                   ))}
                   {items.length > 2 && <span className="more-events">+{items.length - 2} more</span>}
-                  {!items.length && !past && <button type="button" className="ov-add" onClick={() => openComposer(k)} aria-label={`Schedule a post on ${fmtDay(d)}`}><Icon name="plus" size={13} /></button>}
+                  {!items.length && !past && composeOn && <button type="button" className="ov-add" onClick={() => openComposer(k)} aria-label={`Schedule a post on ${fmtDay(d)}`}><Icon name="plus" size={13} /></button>}
                 </div>
               );
             })}
           </div>
-        </section>
+        </section>}
 
-        <section className="ov-worked st-rise" style={{ ['--i' as string]: 7 }} aria-labelledby="worked-t">
+        {analyticsOn && <section className="ov-worked st-rise" style={{ ['--i' as string]: 7 }} aria-labelledby="worked-t">
           <div className="ov-tile-top"><h2 id="worked-t" className="ov-eyebrow">What worked lately</h2><span className="muted ov-small">Top posts by engagement, last 30 days</span></div>
           {worked.length ? (
             <ol className="ov-rank">
@@ -260,9 +293,9 @@ export default function Home() {
               {!loading && <Link className="btn btn-ghost" href="/analytics">Sync insights</Link>}
             </div>
           )}
-        </section>
+        </section>}
 
-        {drafts.length > 0 && (
+        {composeOn && drafts.length > 0 && (
           <section className="ov-drafts st-rise" style={{ ['--i' as string]: 8 }} aria-labelledby="drafts-t">
             <div className="ov-tile-top"><h2 id="drafts-t" className="ov-eyebrow">Drafts</h2><span className="list-count">{drafts.length}</span></div>
             <ul className="ov-draft-list">
@@ -281,15 +314,15 @@ export default function Home() {
           </section>
         )}
 
-        <Link className="ov-slim st-rise" style={{ ['--i' as string]: 8 }} href="/automations">
+        {automationsOn && <Link className="ov-slim st-rise" style={{ ['--i' as string]: 8 }} href="/automations">
           <span className="ov-eyebrow">Automations</span>
           <strong>{data.activeAutomationCount}<small> of {data.automationCount} live</small></strong>
           <span className="ov-small muted">{data.automationCount === 0 ? 'Reply to keyword comments with a DM.' : data.activeAutomationCount === data.automationCount ? 'Every rule is watching comments.' : `${data.automationCount - data.activeAutomationCount} paused.`}</span>
-        </Link>
-        <Link className="ov-slim st-rise" style={{ ['--i' as string]: 9 }} href="/connect">
+        </Link>}
+        <Link className={`ov-slim st-rise ${automationsOn ? '' : 'ov-span-all'}`} style={{ ['--i' as string]: 9 }} href="/connect">
           <span className="ov-eyebrow">Channels</span>
           <strong>{data.accounts.length}<small> connected</small></strong>
-          <span className="ov-chans">{data.accounts.slice(0, 4).map((a) => <span className="st-chip" key={a.id}><Icon name={platformFor(a.provider)} size={12} />{a.name || a.externalId}</span>)}{!data.accounts.length && <span className="ov-small muted">Connect your first account.</span>}</span>
+          <span className="ov-chans">{data.accounts.slice(0, 4).map((a) => <span className="st-chip" key={a.id}><Icon name={platformFor(a.provider)} size={12} />{a.name || a.externalId}</span>)}{!data.accounts.length && <span className="ov-small muted">{canConnect ? 'Connect your first account.' : 'Your account manager connects your channels.'}</span>}</span>
         </Link>
       </div>
     </div>

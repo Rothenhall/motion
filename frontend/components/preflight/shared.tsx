@@ -5,6 +5,8 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { toast } from 'sonner';
 import { Icon } from '../Icons';
 import { API, api, authHeaders } from '../../lib/api';
+import { useCan } from '../../lib/session';
+import { NotOnHint } from '../FeatureGate';
 import type { BrainMap } from './BrainViewer';
 import type { BrainRegion } from './brainAnchors';
 import { fmtClock } from '../../lib/format';
@@ -94,6 +96,7 @@ export function StatusPill({ check }: { check: Pick<Check, 'status' | 'stage' | 
 const BrainViewer = dynamic(() => import('./BrainViewer'), { ssr: false, loading: () => <div className="pf-brain-empty">Loading the brain view…</div> });
 
 export function CheckView({ check, onRetry, nested, onChanged }: { check: Check; onRetry: (id: string) => void; nested?: boolean; onChanged?: () => void }) {
+  const canAi = useCan('ai'); // retrying runs the AI again
   const videoRef = useRef<HTMLVideoElement>(null);
   const [now, setNow] = useState(0);
   const [copied, setCopied] = useState(false);
@@ -116,7 +119,7 @@ export function CheckView({ check, onRetry, nested, onChanged }: { check: Check;
   if (check.status === 'FAILED' || !check.report) return <div className="pf-body">
     <Title className="card-title">This check failed</Title>
     <p className="card-subtitle">{check.error || 'Something went wrong.'}</p>
-    <div className="form-actions" style={{ marginTop: 12 }}><button className="btn btn-sm" type="button" onClick={() => onRetry(check.id)}>Try again</button></div>
+    <div className="form-actions" style={{ marginTop: 12 }}><button className="btn btn-sm" type="button" onClick={() => onRetry(check.id)} disabled={!canAi}>Try again</button>{!canAi && <NotOnHint />}</div>
   </div>;
 
   const r = check.report;
@@ -181,6 +184,7 @@ type BrainState = { kind: 'loading' } | { kind: 'ready'; brain: BrainMap } | { k
 /** The simulated brain response next to the video, or a way to fill it in for checks made before it was stored. */
 export function BrainPanel({ check, now, onChanged, bare = false, regions }: { check: Check; now: number; onChanged?: () => void; bare?: boolean; regions?: BrainRegion[] }) {
   const [state, setState] = useState<BrainState>({ kind: 'loading' });
+  const canAi = useCan('ai'); // loading a brain view can start a new simulation
   const [asking, setAsking] = useState(false);
 
   const fetchBrain = useCallback(async (): Promise<boolean> => {
@@ -227,17 +231,17 @@ export function BrainPanel({ check, now, onChanged, bare = false, regions }: { c
     {state.kind === 'missing' && <div className="pf-brain-empty">
       <strong>No brain view stored for this check</strong>
       <span>It was checked before brain views were saved. If the simulation still has this reel cached, it loads for free, in seconds, or up to 2 minutes if the simulation service is waking up.</span>
-      <button className="btn btn-sm" type="button" disabled={asking} onClick={() => load(false)}>{asking ? 'Checking…' : 'Load brain view'}</button>
+      <button className="btn btn-sm" type="button" disabled={asking || !canAi} onClick={() => load(false)}>{asking ? 'Checking…' : 'Load brain view'}</button>
     </div>}
     {state.kind === 'needs-run' && <div className="pf-brain-empty">
       <strong>This reel needs a fresh simulation</strong>
       <span>It is no longer cached. Building the brain view runs the model again on a GPU (about 10–16 minutes, a small Modal cost). Your insights stay as they are.</span>
-      <button className="btn btn-sm" type="button" disabled={asking} onClick={() => load(true)}>{asking ? 'Starting…' : 'Run the simulation'}</button>
+      <button className="btn btn-sm" type="button" disabled={asking || !canAi} onClick={() => load(true)}>{asking ? 'Starting…' : 'Run the simulation'}</button>
     </div>}
     {state.kind === 'running' && <div className="pf-brain-empty"><strong>Building the brain view…</strong><span>This takes about 10–16 minutes. You can leave this page; it will be here when you come back.</span></div>}
     {state.kind === 'failed' && <div className="pf-brain-empty">
       <strong>{state.message}</strong>
-      <button className="btn btn-sm" type="button" disabled={asking} onClick={() => load(true)}>Try again</button>
+      <button className="btn btn-sm" type="button" disabled={asking || !canAi} onClick={() => load(true)}>Try again</button>
     </div>}
   </figure>;
 }

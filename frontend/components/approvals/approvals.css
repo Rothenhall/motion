@@ -1,0 +1,85 @@
+/* Approval workflow styles. Tokens come from globals.css; the three states are:
+   awaiting (neutral, dashed), changes requested (attention, indigo, as in the sidebar accent), approved (positive). */
+:root {
+  --ap-attn: #4b3fc9;
+  --ap-attn-bg: #ecebfb;
+}
+[data-theme="dark"] {
+  --ap-attn: #aaa5ff;
+  --ap-attn-bg: rgba(129, 140, 248, .16);
+}
+
+/* ——— State chips ——— */
+.ap-pill {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 20px;
+  font-size: 11.5px; font-weight: 725; white-space: nowrap; border: 1px solid transparent;
+}
+.ap-pill::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.ap-pill.ap-awaiting { color: var(--text-2); background: var(--bg-deep); border: 1px dashed var(--text-3); }
+.ap-pill.ap-awaiting::before { background: transparent; box-shadow: inset 0 0 0 1.5px currentColor; }
+.ap-pill.ap-changes { color: var(--ap-attn); background: var(--ap-attn-bg); border-color: color-mix(in oklab, var(--ap-attn) 30%, transparent); }
+.ap-pill.ap-approved { color: var(--success); background: var(--success-bg); border-color: color-mix(in oklab, var(--success) 28%, transparent); }
+.ap-pill.ap-late { color: var(--warning); background: var(--warning-bg); border-color: color-mix(in oklab, var(--warning) 28%, transparent); }
+
+/* ——— Queue ——— */
+.ap-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+.ap-toolbar .sel-trigger { min-width: 190px; }
+.ap-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+.ap-card { padding: 16px; display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 16px; }
+.ap-card.ap-compact { grid-template-columns: 64px minmax(0, 1fr); padding: 12px; gap: 12px; }
+.ap-card .st-thumb { width: 100%; }
+.ap-body { min-width: 0; display: grid; gap: 10px; align-content: start; }
+.ap-caption { margin: 0; color: var(--text-1); font-size: 13.5px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.ap-caption.ap-empty { color: var(--text-3); font-style: italic; }
+.ap-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.ap-meta { display: grid; gap: 3px; margin: 0; color: var(--text-2); font-size: 12.5px; }
+.ap-meta div { display: flex; flex-wrap: wrap; gap: 4px 8px; }
+.ap-meta dt { color: var(--text-3); }
+.ap-meta dd { margin: 0; overflow-wrap: anywhere; }
+.ap-client { color: var(--brand-text); font-weight: 725; text-decoration: underline; text-underline-offset: 3px; }
+.ap-quote { margin: 0; padding: 8px 12px; border-left: 3px solid var(--ap-attn); border-radius: 0 8px 8px 0; background: var(--ap-attn-bg); color: var(--text-1); font-size: 12.5px; line-height: 1.5; overflow-wrap: anywhere; }
+.ap-quote b { display: block; margin-bottom: 2px; color: var(--ap-attn); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
+.ap-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.ap-skel { height: 150px; border-radius: 14px; }
+.ap-more { margin-top: 18px; }
+.ap-more > summary { cursor: pointer; padding: 8px 2px; color: var(--text-2); font-size: 13px; font-weight: 625; }
+.ap-more > summary:hover { color: var(--text-1); }
+.ap-more .ap-list { margin-top: 10px; }
+.ap-section-title { margin: 0 0 10px; color: var(--text-1); font-size: 14.5px; font-weight: 625; }
+
+/* ——— Dialogs ——— */
+.ap-dialog-form { display: grid; gap: 14px; }
+.ap-dialog-form textarea { min-height: 110px; }
+.ap-count { margin-left: auto; color: var(--text-3); font-size: 12px; font-variant-numeric: tabular-nums; }
+.ap-count.over { color: var(--danger); font-weight: 725; }
+
+/* ——— Toggle ——— */
+.ap-toggle { display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.ap-toggle-copy { min-width: 0; display: grid; gap: 3px; }
+.ap-toggle-copy label { color: var(--text-1); font-size: 13.5px; font-weight: 725; cursor: pointer; }
+.ap-toggle-copy p { margin: 0; color: var(--text-2); font-size: 12.5px; line-height: 1.5; }
+.ap-toggle [data-slot="switch"] { margin-top: 2px; }
+
+/* ——— Client side: planner, drawer ——— */
+.pl-ev.ap-awaiting:not(:focus-visible) { box-shadow: var(--shadow-xs); outline: 1.5px dashed var(--text-3); outline-offset: -1px; }
+.pl-ev.ap-changes { box-shadow: 0 0 0 1.5px var(--ap-attn), var(--shadow); }
+.pl-ev.ap-awaiting .pl-ev-copy span { color: var(--text-2); font-style: italic; }
+.pl-ev.ap-changes .pl-ev-copy span { color: var(--ap-attn); font-weight: 625; }
+.pl-ev.ap-approved .pl-ev-copy span { color: var(--success); font-weight: 625; }
+.pl-mini.ap-awaiting .st-thumb { opacity: .7; outline: 1.5px dashed var(--text-3); outline-offset: -1.5px; }
+.pl-mini.ap-changes .st-thumb { box-shadow: 0 0 0 2px var(--ap-attn); }
+.pl-feed-item.ap-awaiting .st-thumb { opacity: .65; outline: 1.5px dashed var(--text-3); outline-offset: -2px; }
+.pl-feed-item.ap-changes .st-thumb { box-shadow: inset 0 0 0 2px var(--ap-attn); }
+
+.ap-banner { display: grid; gap: 8px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface-2); font-size: 13px; color: var(--text-1); }
+.ap-banner.ap-changes { border-color: color-mix(in oklab, var(--ap-attn) 30%, transparent); background: var(--ap-attn-bg); }
+.ap-banner.ap-awaiting { border-style: dashed; border-color: var(--text-3); }
+.ap-banner.ap-approved { border-color: color-mix(in oklab, var(--success) 28%, transparent); background: var(--success-bg); }
+.ap-banner p { margin: 0; line-height: 1.5; }
+.ap-edit { display: grid; gap: 12px; }
+
+@media (max-width: 560px) {
+  .ap-card { grid-template-columns: 72px minmax(0, 1fr); padding: 12px; gap: 12px; }
+  .ap-actions .btn { flex: 1; }
+  .ap-toolbar .sel-trigger { width: 100%; }
+}

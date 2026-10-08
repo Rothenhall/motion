@@ -6,8 +6,11 @@ import { api } from '../../lib/api';
 import { Icon } from '../../components/Icons';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { errorText } from '../../lib/format';
+import ReadOnlyChannels from '../../components/ReadOnlyChannels';
+import { canManageChannels } from '../../lib/nav';
+import { useMe } from '../../lib/session';
 
-type Account = { id: string; provider: string; externalId: string; name?: string | null; createdAt: string };
+type Account = { id: string; provider: string; externalId: string; name?: string | null; createdAt: string; tokenExpires?: string | null };
 
 const providers = [
   { id: 'instagram', title: 'Instagram', desc: 'Posts, Reels, comments and DMs, synced automatically.', icon: 'instagram' as const, tone: 'instagram', match: 'instagram' },
@@ -25,7 +28,14 @@ const steps = [
   { title: 'Synced', desc: 'Posts, inbox & stats appear' },
 ];
 
+/** Staff manage channels; everyone else (and staff in a read-only preview) sees the plain list. */
 export default function Connect() {
+  const me = useMe();
+  if (!me) return null;
+  return canManageChannels(me) ? <ManageConnections /> : <ReadOnlyChannels />;
+}
+
+function ManageConnections() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState('');

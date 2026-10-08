@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable } from '@nestjs/comm
 import { Role, UserStatus } from '@prisma/client';
 import { createHash, randomBytes } from 'crypto';
 import { PrismaService } from '../prisma.service';
+import { frontendUrl } from '../frontend-url';
 import { hashPassword } from './crypto';
 
 export const INVITE_TTL_MS = 72 * 3_600_000;
@@ -24,7 +25,7 @@ export class InvitesService {
   constructor(private prisma: PrismaService) {}
 
   linkFor(type: TokenType, token: string) {
-    const base = (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
+    const base = frontendUrl();
     return `${base}/${type === 'INVITE' ? 'accept-invite' : 'reset-password'}?token=${encodeURIComponent(token)}`;
   }
 

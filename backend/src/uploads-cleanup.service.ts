@@ -4,19 +4,9 @@ import { promises as fs } from 'fs';
 import { join } from 'path';
 import { PrismaService } from './prisma.service';
 import { UPLOAD_DIR, UPLOAD_NAME } from './media.controller';
+import { uploadNamesIn } from './upload-names';
 
 const DAY = 86_400_000;
-
-/** The upload file names a stored mediaUrls value (a JSON array of URLs) points at, whatever host the URLs carry. */
-function filesIn(json: string): string[] {
-  try {
-    const urls: unknown = JSON.parse(json);
-    if (!Array.isArray(urls)) return [];
-    return urls.flatMap((u) => {
-      try { return [new URL(String(u)).pathname.replace(/^\/media\//, '')]; } catch { return []; }
-    });
-  } catch { return []; }
-}
 
 /**
  * Uploads pile up: removed posts, abandoned composers and deleted accounts leave files behind. This finds the files that
@@ -45,7 +35,7 @@ export class UploadsCleanupService {
       this.prisma.postDraft.findMany({ select: { mediaUrls: true } }),
       this.prisma.contentCheck.findMany({ select: { mediaUrls: true } }),
     ]);
-    for (const rows of tables) for (const row of rows) for (const file of filesIn(row.mediaUrls)) kept.add(file);
+    for (const rows of tables) for (const row of rows) for (const file of uploadNamesIn(row.mediaUrls)) kept.add(file);
 
     const orphans: { name: string; size: number }[] = [];
     for (const name of await fs.readdir(dir)) {

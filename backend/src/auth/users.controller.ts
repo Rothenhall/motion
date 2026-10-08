@@ -94,7 +94,7 @@ export class UsersController {
   /** Who is signed in, which client they are looking at, and what is switched on for it. The app builds its menu from this. */
   @Get('me')
   async me(@Ctx() ctx: RequestContext) {
-    const client = ctx.clientId ? await this.prisma.client.findUnique({ where: { id: ctx.clientId }, select: { id: true, name: true, status: true } }) : null;
+    const client = ctx.clientId ? await this.prisma.client.findUnique({ where: { id: ctx.clientId }, select: { id: true, name: true, status: true, requireApproval: true } }) : null;
     const features = ctx.clientId ? await this.features.forClient(ctx.clientId) : null;
     return {
       id: ctx.user.id,
