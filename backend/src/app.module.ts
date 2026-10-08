@@ -28,6 +28,8 @@ import { IdeasService } from './ai/ideas.service';
 import { IdeasController } from './ai/ideas.controller';
 import { HooksService } from './ai/hooks.service';
 import { HooksController } from './ai/hooks.controller';
+import { CreatorsController } from './creators/creators.controller';
+import { CreatorsService } from './creators/creators.service';
 import { PreflightController } from './preflight/preflight.controller';
 import { PreflightService } from './preflight/preflight.service';
 import { TribeClient } from './preflight/tribe.client';
@@ -45,7 +47,7 @@ import { AdminClientsController } from './admin/admin-clients.controller';
 
 @Module({
   imports: [ConfigModule.forRoot({ isGlobal: true }), ScheduleModule.forRoot(), ThrottlerModule.forRoot(throttlerOptions)],
-  controllers: [UsersController, InvitesController, TeamController, AdminClientsController, AuthController, PostsController, DraftsController, AccountsController, AutomationsController, CommentsController, WebhooksController, DashboardController, MediaController, AnalyticsController, IdeasController, HooksController, PreflightController],
-  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }, { provide: APP_GUARD, useClass: AuthGuard }, { provide: APP_GUARD, useClass: RolesGuard }, { provide: APP_GUARD, useClass: FeatureGuard }, PrismaService, SchedulerService, UploadsCleanupService, PublishersService, AutomationsService, MetaService, InsightsService, AiService, IdeasService, HooksService, TribeClient, PreflightService, FeaturesService, ClientsService, TenancyBackfillService, MediaOwnershipService, AuditService, InvitesService, TeamService],
+  controllers: [UsersController, InvitesController, TeamController, AdminClientsController, AuthController, PostsController, DraftsController, AccountsController, AutomationsController, CommentsController, WebhooksController, DashboardController, MediaController, AnalyticsController, IdeasController, HooksController, CreatorsController, PreflightController],
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }, { provide: APP_GUARD, useClass: AuthGuard }, { provide: APP_GUARD, useClass: RolesGuard }, { provide: APP_GUARD, useClass: FeatureGuard }, PrismaService, SchedulerService, UploadsCleanupService, PublishersService, AutomationsService, MetaService, InsightsService, AiService, IdeasService, HooksService, CreatorsService, TribeClient, PreflightService, FeaturesService, ClientsService, TenancyBackfillService, MediaOwnershipService, AuditService, InvitesService, TeamService],
 })
 export class AppModule {}

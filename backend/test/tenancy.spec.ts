@@ -285,7 +285,7 @@ describe('Client workspaces', () => {
       const fresh = await world('fresh');
       expect((await http().get('/auth/me').set(bearer(fresh.token)).expect(200)).body.features.ai).toBe(false);
       await http().get('/posts').set(bearer(fresh.token)).expect(200);
-      for (const [method, path] of [['post', '/ideas/generate'], ['post', '/hooks/generate'], ['post', '/preflight']] as const) {
+      for (const [method, path] of [['post', '/ideas/generate'], ['post', '/hooks/generate'], ['post', '/preflight'], ['post', '/creators/chat']] as const) {
         const res = await http()[method](path).set(bearer(fresh.token)).send({}).expect(403);
         expect(res.body).toMatchObject({ code: 'FEATURE_DISABLED', feature: 'ai' });
       }
@@ -302,7 +302,7 @@ describe('Client workspaces', () => {
       await features.set(w.client.id, 'planner', true);
       await http().get('/posts').set(bearer(w.token)).expect(200);
 
-      for (const [key, path] of [['inbox', '/comments/events'], ['automations', '/automations'], ['analytics', '/analytics'], ['content-lab', '/ideas'], ['preflight', '/preflight']] as const) {
+      for (const [key, path] of [['inbox', '/comments/events'], ['automations', '/automations'], ['analytics', '/analytics'], ['content-lab', '/ideas'], ['creators', '/creators/shortlist'], ['preflight', '/preflight']] as const) {
         await features.set(w.client.id, key, false);
         expect((await http().get(path).set(bearer(w.token)).expect(403)).body.feature).toBe(key);
       }
@@ -561,6 +561,7 @@ describe('Client workspaces', () => {
       'GET /drafts', 'POST /drafts', 'PATCH /drafts/:id', 'DELETE /drafts/:id',
       'GET /ideas', 'POST /ideas/generate', 'PATCH /ideas/:id', 'DELETE /ideas/:id',
       'GET /hooks', 'POST /hooks', 'POST /hooks/generate', 'PATCH /hooks/:id/favorite', 'POST /hooks/:id/use', 'DELETE /hooks/:id',
+      'POST /creators/chat', 'POST /creators/search', 'GET /creators/shortlist', 'POST /creators/shortlist', 'DELETE /creators/shortlist/:id',
       'GET /brand-profile', 'PUT /brand-profile',
       'GET /comments/events', 'POST /comments/reply',
       'GET /automations', 'POST /automations', 'PATCH /automations/:id/toggle', 'DELETE /automations/:id',

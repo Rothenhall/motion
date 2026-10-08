@@ -77,6 +77,7 @@ describe('API security', () => {
       ['get', '/analytics'], ['post', '/analytics/sync'],
       ['get', '/brand-profile'], ['put', '/brand-profile'], ['get', '/ideas'], ['post', '/ideas/generate'], ['patch', '/ideas/x'], ['delete', '/ideas/x'],
       ['get', '/hooks'], ['post', '/hooks'], ['post', '/hooks/generate'], ['patch', '/hooks/x/favorite'], ['post', '/hooks/x/use'], ['delete', '/hooks/x'],
+      ['post', '/creators/chat'], ['post', '/creators/search'], ['get', '/creators/shortlist'], ['post', '/creators/shortlist'], ['delete', '/creators/shortlist/x'],
       ['get', '/preflight'], ['post', '/preflight'], ['get', '/preflight/status'], ['post', '/preflight/compare'], ['get', '/preflight/x'],
       ['get', '/preflight/groups/x'], ['post', '/preflight/x/retry'], ['delete', '/preflight/x'],
       ['get', '/auth/me'], ['get', '/auth/instagram/start'],

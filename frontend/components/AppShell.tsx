@@ -22,6 +22,7 @@ const studioLinks = [
   { href: '/', label: 'Overview', icon: 'grid' as const },
   { href: '/planner', label: 'Planner', icon: 'calendar' as const },
   { href: '/lab', label: 'Content Lab', icon: 'bulb' as const },
+  { href: '/creators', label: 'Creators', icon: 'search' as const },
   { href: '/preflight', label: 'Pre-flight check', icon: 'gauge' as const },
 ];
 
@@ -39,6 +40,7 @@ const titles: Record<string, { eyebrow: string; title: string }> = {
   '/': { eyebrow: 'Studio', title: 'Overview' },
   '/planner': { eyebrow: 'Studio', title: 'Planner' },
   '/lab': { eyebrow: 'Studio', title: 'Content Lab' },
+  '/creators': { eyebrow: 'Studio', title: 'Creators' },
   '/ideas': { eyebrow: 'Studio', title: 'Content Lab' }, // these two only redirect to /lab
   '/hooks': { eyebrow: 'Studio', title: 'Content Lab' },
   '/preflight': { eyebrow: 'Studio', title: 'Pre-flight check' },

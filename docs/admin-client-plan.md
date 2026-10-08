@@ -283,6 +283,7 @@ Same table as Cailyx (`ClientFeatureFlag`, no row means default). Keys live in o
 |---|---|---|---|
 | `planner` | section | on | Planner page and calendar endpoints |
 | `content-lab` | section | on | Ideas board, hook library, brand voice page |
+| `creators` | section | on | Creators tab: chat finder, top-5 search, shortlist |
 | `preflight` | section | on | Pre-flight checks |
 | `inbox` | section | on | Comment inbox |
 | `automations` | section | on | Automation rules |
@@ -298,7 +299,7 @@ Overview is always on, but each widget needs its section; widgets for switched-o
 
 **Enforcement is in three layers.** (1) Backend `FeatureGuard` on routes (403 with code `FEATURE_DISABLED` and the key). (2) Backend background jobs check flags (autopilot needs `ai` and `content-lab`; automations need `automations`). (3) Frontend `FeatureGate` plus nav filtering, so typed addresses show the "not switched on" screen.
 
-Route to key map (backend): `posts` (`planner`, plus `compose` / `schedule` / `delete-posts` on writes), `drafts` (`compose`), `ideas/hooks/brand-profile` (`content-lab`, `ai` on generate, `edit-brand` on writes), `preflight` (`preflight`, `ai`), `comments` (`inbox`, `inbox-reply` on reply), `automations` (`automations`), `analytics`/`dashboard` (`analytics`; dashboard returns only permitted parts).
+Route to key map (backend): `posts` (`planner`, plus `compose` / `schedule` / `delete-posts` on writes), `drafts` (`compose`), `ideas/hooks/brand-profile` (`content-lab`, `ai` on generate, `edit-brand` on writes), `creators/chat` (`creators`, `ai`), `creators/search` and `creators/shortlist` (`creators`), `preflight` (`preflight`, `ai`), `comments` (`inbox`, `inbox-reply` on reply), `automations` (`automations`), `analytics`/`dashboard` (`analytics`; dashboard returns only permitted parts).
 
 ## 9. Preview as client
 

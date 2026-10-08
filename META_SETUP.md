@@ -25,6 +25,7 @@ These are exactly the scopes the code asks for (`backend/src/auth.controller.ts`
 - Facebook: `pages_show_list`, `pages_read_engagement`, `pages_manage_posts`, `pages_manage_engagement` (reply to comments as the Page), `pages_manage_metadata` (subscribe the Page to webhooks), `pages_messaging` (comment-to-DM), `pages_read_user_content`, `read_insights`
 - Instagram (Instagram Login): `instagram_business_basic`, `instagram_business_content_publish`, `instagram_business_manage_comments`, `instagram_business_manage_messages`, `instagram_business_manage_insights`
 - Threads: `threads_basic`, `threads_content_publish`, `threads_manage_insights`
+- Creator Marketplace (Creators tab, `backend/src/creators/`): `instagram_creator_marketplace_discovery` (search + insights, needs Advanced Access; standard access returns test data), plus `instagram_basic`, `pages_show_list`, `business_management`. Discovery calls use the Page token of a `facebook_page` channel linked to an Instagram business account whose brand is eligible/onboarded to the marketplace. Until then the tab shows labelled sample creators. `instagram_creator_marketplace_messaging` is separate and only needed for in-app brand-to-creator outreach.
 
 Request flow: dev_mode → test with admin/tester roles → screencast + use-case → App Review → Live.
 

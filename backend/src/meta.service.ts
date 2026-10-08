@@ -127,6 +127,14 @@ export class MetaService implements OnModuleInit {
     });
     const list: any[] = pages.data?.data ?? [];
     if (!list.length) {
+      // Say why: an empty list is either no Pages in the grant or a missing pages_show_list permission.
+      try {
+        const perms = await axios.get(`https://graph.facebook.com/${this.v()}/me/permissions`, { params: { access_token: longToken.token } });
+        const granted = (perms.data?.data ?? []).filter((x: any) => x.status === 'granted').map((x: any) => x.permission);
+        this.log.warn(`Facebook returned no Pages. Permissions granted: ${granted.join(', ') || 'none'}`);
+      } catch (e) {
+        this.log.warn(`Facebook returned no Pages and permissions could not be read: ${this.msg(e)}`);
+      }
       throw new Error('No Facebook Pages found on this account. Create a Page (or ask an admin to add you), then reconnect.');
     }
     // Check every Page first, so a clash on the last one does not leave the others half connected.

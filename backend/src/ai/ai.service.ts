@@ -1,5 +1,6 @@
 import { BadGatewayException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { z } from 'zod';
+import { ChatMessage, CreatorChatReplySchema, type CreatorChatReply } from '../creators/creators.constants';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const DEFAULT_MODEL = 'z-ai/glm-5.3-flash';
@@ -107,7 +108,18 @@ When an audience simulation is provided, it is a model's estimate of how an aver
 
 Alternative hooks: three openings for this exact post in the brand's voice. For video, the first spoken line or on-screen text; for images and text, the first line of the caption or post.`;
 
-/** Calls a model on OpenRouter and returns schema-validated JSON for the AI features. */
+const CREATOR_CHAT_SYSTEM = `You are Motion's creator finder. A brand wants Instagram creators for partnership ads. Read the conversation and keep the search criteria up to date.
+
+Rules:
+- Ask one focused question at a time, in plain words, talking to the user as "you".
+- Collect in this order: niche or keywords, creator country, follower range, then optionally interests, audience country, and whether they want proven ad performers or fresh faces.
+- Mark ready_to_search true when the niche plus creator country plus a follower range are known, or when the user asks to search or see results.
+- missing lists in plain words what is still needed, most important first, empty when ready.
+- Keep criteria values exact: country codes uppercase two letters, follower bounds from 0, 10000, 25000, 50000, 75000, 100000, 250000, 1000000.
+- Interests must come from ANIMALS_AND_PETS, BOOKS_AND_LITERATURE, BUSINESS_FINANCE_AND_ECONOMICS, EDUCATION_AND_LEARNING, BEAUTY, FASHION, FITNESS_AND_WORKOUTS, FOOD_AND_DRINK, GAMES_PUZZLES_AND_PLAY, HISTORY_AND_PHILOSOPHY, HOLIDAYS_AND_CELEBRATIONS, HOME_AND_GARDEN, MUSIC_AND_AUDIO, PERFORMING_ARTS, SCIENCE_AND_TECH, SPORTS, TV_AND_MOVIES, TRAVEL_AND_LEISURE_ACTIVITIES, VEHICLES_AND_TRANSPORTATION, VISUAL_ARTS_ARCHITECTURE_AND_CRAFTS, or be left empty. Never invent interest names.
+- creatorGender is male, female, or omitted. creatorAgeBucket is one of 18_to_24, 25_to_34, 35_to_44, 45_to_54, 55_to_64, 65_and_above, or omitted. recommendationType is one of most_relevant_for_me, high_ad_performance, most_ads_experience, similar_brands, similar_audience, or omitted. Never write "any" or "list".
+- Never use em dashes or en dashes anywhere in your writing; use a comma, a full stop or the word "to" instead.`;
+
 @Injectable()
 export class AiService {
   private readonly log = new Logger(AiService.name);
@@ -140,6 +152,16 @@ export class AiService {
     ];
     const out = await this.parse(lines.filter(Boolean).join('\n\n'), HookSchema, 'hooks');
     return out.hooks.slice(0, input.count);
+  }
+
+  /** Creator finder chat: conversation so far -> next question plus machine-readable criteria. */
+  async chatCreators(messages: ChatMessage[], brand: { niche: string; audience?: string | null } | null): Promise<CreatorChatReply> {
+    const lines = [
+      brand ? `Brand niche: ${brand.niche}${brand.audience ? `\nAudience: ${brand.audience}` : ''}` : '',
+      'Conversation so far (oldest first):',
+      ...messages.map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`),
+    ];
+    return this.parse(lines.filter(Boolean).join('\n'), CreatorChatReplySchema, 'creator_chat', CREATOR_CHAT_SYSTEM);
   }
 
   /** Pre-flight check: frames / images + measured facts + optional audience simulation -> plain-language insights. */

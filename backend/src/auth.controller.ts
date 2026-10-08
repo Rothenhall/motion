@@ -19,6 +19,9 @@ const EXPIRED = 'This connection link expired or was not started from Motion. Pl
 const FB_SCOPES = [
   'pages_show_list','pages_read_engagement','pages_manage_posts','pages_manage_engagement',
   'pages_manage_metadata','pages_messaging','pages_read_user_content','read_insights',
+  'business_management', // /me/accounts leaves out Pages managed through a business portfolio without it
+  'instagram_basic', // lets the Page report its linked Instagram account, which Creator search needs
+  'instagram_manage_insights', // Business Discovery (public profile lookups)
 ].join(',');
 
 // Business Login for Instagram — IG only, no Facebook required for the end user.

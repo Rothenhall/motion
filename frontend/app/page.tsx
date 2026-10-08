@@ -13,6 +13,7 @@ import PostDrawer from '../components/studio/PostDrawer';
 import Spark from '../components/studio/Spark';
 import Thumb from '../components/studio/Thumb';
 import { api } from '../lib/api';
+import { parseMedia } from '../lib/media';
 import { compactNumber, errorText, formatName, platformFor, platformName } from '../lib/format';
 import { addDays, dayKey, fmtDay, fmtTime, needsMedia, postPlatform, startOfDay, startOfWeek, type Draft, type Post } from '../lib/posts';
 
@@ -119,7 +120,8 @@ export default function Home() {
   const rateSeries = analytics?.series.map((s) => (s.views ? (s.engagements / s.views) * 100 : 0)) || [];
   const covered = week.filter((d) => d >= startOfDay(new Date()) && weekPosts(d).length).length;
   const daysLeft = week.filter((d) => d >= startOfDay(new Date())).length;
-  const worked = (analytics?.topPosts || []).slice(0, 6);
+  const worked = (analytics?.topPosts || []).slice(0, 5);
+  const topEng = Math.max(1, ...worked.map((t) => t.engagements || 0));
 
   return (
     <div className="ov">
@@ -229,15 +231,24 @@ export default function Home() {
         <section className="ov-worked st-rise" style={{ ['--i' as string]: 7 }} aria-labelledby="worked-t">
           <div className="ov-tile-top"><h2 id="worked-t" className="ov-eyebrow">What worked lately</h2><span className="muted ov-small">Top posts by engagement, last 30 days</span></div>
           {worked.length ? (
-            <ol className="ov-gallery">
+            <ol className="ov-rank">
               {worked.map((t, i) => {
                 const full = byId.get(t.id);
+                const hasMedia = parseMedia(t.mediaUrls ?? full?.mediaUrls).length > 0;
+                const pct = Math.max(4, Math.round(((t.engagements || 0) / topEng) * 100));
                 return (
                   <li key={t.id}>
-                    <button type="button" className="ov-gpost" onClick={() => full && setOpen(full)} disabled={!full}>
-                      <Thumb id={t.id} media={t.mediaUrls ?? full?.mediaUrls} mediaType={t.mediaType} caption={t.caption} ratio="1 / 1" badge={i === 0 ? 'Top' : undefined} />
-                      <span className="ov-gmeta"><b>{t.views != null ? compactNumber(t.views) : 'n/a'}</b> views · {t.engagements != null ? compactNumber(t.engagements) : 'n/a'} eng.</span>
-                      <span className="ov-gcap">{t.caption || `${formatName(t.mediaType)} post`}</span>
+                    <button type="button" className="ov-rrow" onClick={() => full && setOpen(full)} disabled={!full}>
+                      <span className="ov-rnum">{i + 1}</span>
+                      {hasMedia && <Thumb id={t.id} media={t.mediaUrls ?? full?.mediaUrls} mediaType={t.mediaType} ratio="1 / 1" className="ov-rthumb" />}
+                      <span className="ov-rbody">
+                        <span className="ov-rcap">{t.caption || `${formatName(t.mediaType)} post`}</span>
+                        <span className="ov-rbar" aria-hidden="true"><i style={{ width: `${pct}%` }} /></span>
+                      </span>
+                      <span className="ov-rnums">
+                        <b>{t.views != null ? compactNumber(t.views) : 'n/a'}</b><small>views</small>
+                        <b>{t.engagements != null ? compactNumber(t.engagements) : 'n/a'}</b><small>eng.</small>
+                      </span>
                     </button>
                   </li>
                 );

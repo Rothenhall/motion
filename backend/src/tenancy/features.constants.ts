@@ -6,6 +6,7 @@ export const FEATURE_KEYS = [
   // sections
   'planner',
   'content-lab',
+  'creators',
   'preflight',
   'inbox',
   'automations',
@@ -22,13 +23,14 @@ export const FEATURE_KEYS = [
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
 
 /** For the admin screen: the switches that hide a whole section, and the ones that allow or block one action. */
-export const SECTION_KEYS: FeatureKey[] = ['planner', 'content-lab', 'preflight', 'inbox', 'automations', 'analytics'];
+export const SECTION_KEYS: FeatureKey[] = ['planner', 'content-lab', 'creators', 'preflight', 'inbox', 'automations', 'analytics'];
 export const ACTION_KEYS: FeatureKey[] = ['compose', 'schedule', 'delete-posts', 'inbox-reply', 'edit-brand', 'ai'];
 export type FeatureMap = Record<FeatureKey, boolean>;
 
 export const FEATURE_DEFAULTS: FeatureMap = {
   planner: true,
   'content-lab': true,
+  creators: true,
   preflight: true,
   inbox: true,
   automations: true,

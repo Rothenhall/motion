@@ -20,6 +20,7 @@ const navigate: Action[] = [
   { id: 'ov', label: 'Overview', hint: 'Workspace', href: '/', icon: 'grid', keywords: ['home', 'dashboard'] },
   { id: 'pl', label: 'Planner', hint: 'Calendar', href: '/planner', icon: 'calendar', keywords: ['schedule', 'calendar'] },
   { id: 'lab', label: 'Content Lab', hint: 'Ideas and hooks', href: '/lab', icon: 'bulb', keywords: ['ideas', 'hooks', 'board'] },
+  { id: 'cr', label: 'Creators', hint: 'Find Instagram creators', href: '/creators', icon: 'search', keywords: ['creators', 'marketplace', 'influencers', 'partnership'] },
   { id: 'hk', label: 'Hook library', hint: 'Opening lines', href: '/lab?view=hooks', icon: 'sparkles' },
   { id: 'pf', label: 'Pre-flight check', hint: 'Predict reactions before posting', href: '/preflight', icon: 'gauge', keywords: ['predict', 'review', 'check'] },
   { id: 'au', label: 'Automations', hint: 'Comment to DM', href: '/automations', icon: 'zap', keywords: ['rules', 'dm'] },

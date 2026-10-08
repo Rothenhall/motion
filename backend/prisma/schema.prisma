@@ -47,6 +47,7 @@ model Client {
   checks          ContentCheck[]
   brandProfile    BrandProfile?
   media           MediaFile[]
+  creatorShortlist CreatorShortlist[]
 }
 
 /// A deliberate on/off choice for one client. A feature with no row uses its default (see src/tenancy/features.constants.ts).
@@ -358,4 +359,24 @@ model PostDraft {
   updatedAt   DateTime  @updatedAt
 
   @@index([clientId, updatedAt])
+}
+
+/// An Instagram creator a client saved from the Creators tab. Snapshot of the profile at save time.
+model CreatorShortlist {
+  id                String   @id @default(cuid())
+  clientId          String
+  client            Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  userId            String
+  username          String
+  creatorId         String?
+  profilePictureUrl String?
+  biography         String?
+  country           String?
+  followers         Int?
+  verified          Boolean?
+  data              String   @default("{}")
+  createdAt         DateTime @default(now())
+
+  @@unique([clientId, username])
+  @@index([clientId, createdAt])
 }
